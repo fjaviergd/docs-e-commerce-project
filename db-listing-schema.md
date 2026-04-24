@@ -117,7 +117,10 @@ Cada fila = un ítem físico del CRM vinculado al listing. `UNIQUE` en `crm_inve
 | `id` | int | PK |
 | `listing_id` | int | FK → `listings.id` |
 | `listing_variation_id` | int | nullable FK — `null` = single listing |
-| `crm_inventory_id` | int | ID en la tabla `inventory` del CRM |
+| `crm_inventory_id` | int | ID principal en la tabla `inventory` del CRM — UNIQUE |
+| `crm_po_id` | varchar | nullable — número de PO en el CRM |
+| `crm_po_line` | varchar | nullable — línea de la PO en el CRM |
+| `crm_iq_id` | varchar | nullable — identificador IQ en el CRM |
 | `crm_warehouse_id` | int | Bodega origen — denormalizado para queries rápidos |
 
 ---
@@ -240,6 +243,7 @@ Manejada por el superadmin. Los porcentajes se copian como snapshot al listing e
 |---------|------|-------|
 | `id` | int | PK |
 | `channel` | varchar | `EBAY \| GTS_STORE` |
+| `ebay_linked_account_id` | int | nullable — `null` = aplica a todos / id = solo esa cuenta eBay |
 | `discount_pct` | decimal | |
 | `updated_by` | int | FK → users |
 | `updated_at` | timestamp | |
@@ -330,7 +334,10 @@ erDiagram
         int         id
         int         listing_id
         int         listing_variation_id    "nullable"
-        int         crm_inventory_id        "UNIQUE"
+        int         crm_inventory_id        "UNIQUE — ID principal del CRM"
+        varchar     crm_po_id               "nullable"
+        varchar     crm_po_line             "nullable"
+        varchar     crm_iq_id               "nullable"
         int         crm_warehouse_id
     }
 
@@ -403,6 +410,7 @@ erDiagram
     price_config {
         int         id
         varchar     channel                 "EBAY|GTS_STORE"
+        int         ebay_linked_account_id  "nullable — null=global / id=cuenta específica"
         decimal     discount_pct
         int         updated_by
         timestamp   updated_at
