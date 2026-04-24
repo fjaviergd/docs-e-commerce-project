@@ -4,7 +4,15 @@ Documentación de todas las APIs de eBay consumidas por `crm-api_nest` en el flu
 
 ## Flujo de listing (doc principal)
 
-**[00-listing-creation-flow.md](./00-listing-creation-flow.md)** — Mapeo completo de todos los endpoints del CRM con sus endpoints de eBay correspondientes, en orden de uso.
+**[00-listing-creation-flow.md](./00-listing-creation-flow.md)** — Mapeo completo de todos los endpoints del CRM con sus endpoints de eBay correspondientes, en orden de uso (listing simple, sin variaciones).
+
+**[00b-listing-variations-flow.md](./00b-listing-variations-flow.md)** — Flujo equivalente para listings con variaciones: qué cambia respecto al simple, qué está implementado en v1, qué falta para v2, y un payload de ejemplo completo.
+
+---
+
+## Diseño de base de datos — Módulo de Listings
+
+**[db-listing-schema.md](./db-listing-schema.md)** — Esquema completo: 12 tablas, ERD Mermaid. Soporta listing simple, listing con variaciones, canal eBay, canal GTS Store, publicación diferida y programada por canal, borradores incompletos, plantillas reutilizables, copia de listings, y control de stock con historial completo de movimientos.
 
 ---
 
