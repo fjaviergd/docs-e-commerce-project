@@ -32,7 +32,12 @@
 | `dim_height` | decimal | nullable |
 | `dim_unit` | varchar | nullable — `IN \| CM` |
 | `gts_category_id` | uuid | nullable FK → `gts_categories.id` — categoría para agrupar en GTS Store |
-| `has_r2v3_cert` | boolean | |
+| `currency` | varchar(3) | default `USD` |
+| `important_notes` | jsonb | nullable — array de notas importantes del producto |
+| `included_items` | jsonb | nullable — array de ítems incluidos con el producto |
+| `r2v3_data_sanitization` | enum | nullable — `N/A \| Non-Data \| ...` |
+| `r2v3_cosmetic` | enum | nullable — `N/A \| C1 \| C2 \| ...` |
+| `r2v3_functionality` | enum | nullable — `N/A \| F1 \| F2 \| ...` |
 | `ebay_category_id` | varchar | nullable |
 | `ebay_category_name` | varchar | nullable |
 | `shared_aspects` | jsonb | nullable — `{ Brand, Model, ... }` |
@@ -212,6 +217,7 @@ Cada cambio de stock genera una fila aquí. El stock actual puede verificarse co
 | `ebay_payment_policy_id` | varchar | nullable en draft |
 | `ebay_return_policy_id` | varchar | nullable en draft |
 | `ebay_store_category_names` | jsonb | Categorías de la tienda eBay del vendedor |
+| `marketplace_id` | varchar(20) | default `EBAY_US` — ej: `EBAY_US \| EBAY_UK \| EBAY_CA` |
 | `ebay_listing_format` | varchar | `FIXED_PRICE` |
 | `ebay_listing_duration` | varchar | `GTC` |
 | `ebay_listing_description_html` | text | HTML generado |
@@ -293,6 +299,12 @@ erDiagram
         enum        source_type             "ORIGINAL|FROM_TEMPLATE|FROM_COPY"
         uuid        source_id               "nullable FK → listings.id"
         uuid        gts_category_id         "nullable FK → gts_categories.id"
+        varchar     currency                "default USD"
+        jsonb       important_notes         "nullable"
+        jsonb       included_items          "nullable"
+        enum        r2v3_data_sanitization  "nullable — N/A|Non-Data|..."
+        enum        r2v3_cosmetic           "nullable — N/A|C1|C2|..."
+        enum        r2v3_functionality      "nullable — N/A|F1|F2|..."
         boolean     is_variation
         enum        shipping_policy         "nullable — NORMAL|FREIGHT|FREE"
         decimal     fixed_shipping_cost     "nullable"
@@ -405,6 +417,7 @@ erDiagram
         varchar     ebay_payment_policy_id  "nullable"
         varchar     ebay_return_policy_id   "nullable"
         jsonb       ebay_store_category_names
+        varchar     marketplace_id          "default EBAY_US"
         varchar     ebay_listing_format
         varchar     ebay_listing_duration
         text        ebay_listing_description_html
