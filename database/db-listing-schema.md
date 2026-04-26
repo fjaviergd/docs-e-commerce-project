@@ -31,12 +31,28 @@
 | `dim_width` | decimal | nullable |
 | `dim_height` | decimal | nullable |
 | `dim_unit` | varchar | nullable — `IN \| CM` |
+| `gts_category_id` | uuid | nullable FK → `gts_categories.id` — categoría para agrupar en GTS Store |
 | `has_r2v3_cert` | boolean | |
 | `ebay_category_id` | varchar | nullable |
 | `ebay_category_name` | varchar | nullable |
 | `shared_aspects` | jsonb | nullable — `{ Brand, Model, ... }` |
 | `draft_progress` | jsonb | `{ general, category, aspects, variations, images, pricing, shipping, inventory, channels }` |
 | `created_by` | int | FK → users |
+| `created_at` | timestamp | |
+| `updated_at` | timestamp | |
+
+---
+
+### `gts_categories` — Catálogo de categorías GTS
+
+Categorías internas planas (sin anidamiento) usadas para agrupar listings en la GTS Store. Son la fuente de verdad — no se eliminan, se desactivan con `is_active = false` para no romper FKs existentes.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `name` | varchar | Nombre de la categoría — ej: `Laptops`, `Desktops`, `Phones` |
+| `is_active` | boolean | `false` = desactivada, no aparece en selectores pero mantiene FKs |
+| `sort_order` | int | |
 | `created_at` | timestamp | |
 | `updated_at` | timestamp | |
 
@@ -258,6 +274,15 @@ Manejada por el superadmin. Los porcentajes se copian como snapshot al listing e
 ```mermaid
 erDiagram
 
+    gts_categories {
+        uuid        id
+        varchar     name
+        boolean     is_active
+        int         sort_order
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
     listings {
         uuid        id
         varchar     title                   "nullable"
@@ -267,6 +292,7 @@ erDiagram
         enum        status                  "draft|ready|scheduled|published|partially_published|out_of_stock|unpublished|inactive"
         enum        source_type             "ORIGINAL|FROM_TEMPLATE|FROM_COPY"
         uuid        source_id               "nullable FK → listings.id"
+        uuid        gts_category_id         "nullable FK → gts_categories.id"
         boolean     is_variation
         enum        shipping_policy         "nullable — NORMAL|FREIGHT|FREE"
         decimal     fixed_shipping_cost     "nullable"
@@ -418,6 +444,8 @@ erDiagram
         int         updated_by              "int — tabla externa"
         timestamp   updated_at
     }
+
+    gts_categories              ||--o{   listings                         : "categoría GTS Store"
 
     listings                    ||--o|   listing_pricing                  : "1-1 cuando is_variation=false"
     listings                    ||--o{   listing_variation_axes           : "ejes de variación"
