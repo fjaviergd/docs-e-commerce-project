@@ -1,0 +1,167 @@
+flowchart TB
+
+%% CLIENTES
+Client[Cliente Web]
+Admin[Admin / Backoffice]
+
+%% NESTJS ECOMMERCE
+subgraph Ecommerce_NestJS_11
+  API[API Gateway / Controllers]
+  Auth[Auth JWT]
+
+  subgraph Core_Modules
+    Users[Users Module\nCrear cuentas]
+    Listings[Listings Module]
+    Search[Search Module\nOpenSearch]
+    PreOrders[PreOrders Module]
+    Payments[Payments Module\nStripe]
+    Shipping[Shipping Module\nCalcular envios]
+    Returns[Returns Module\nDevoluciones]
+    Warranty[Warranty Module\nGarantias]
+    Notifications[Notifications Module\nEmail]
+    StockSync[Stock Sync Module\nInventario Multi-Marketplace]
+  end
+
+  subgraph Inventory_System
+    InventoryLedger[Inventory Ledger Module]
+    InventoryReservation[Inventory Reservation Service]
+  end
+
+  Saga[Saga Orchestrator]
+  Outbox[Outbox Pattern]
+end
+
+%% REDIS
+subgraph Redis
+  Cache[(Cache)]
+  RateLimit[(Rate Limit)]
+  Idempotency[(Idempotency Keys)]
+  Queue[BullMQ Queues]
+end
+
+%% WORKERS
+subgraph Workers
+  EmailWorker[Email Worker]
+  StockWorker[Stock Sync Worker]
+  PaymentWorker[Payment Worker]
+  InventoryWorker[Inventory Worker]
+  WebhookWorker[Webhook Worker]
+end
+
+%% EVENT INFRA
+subgraph Event_Infrastructure
+  EventStore[(Event Webhook Store)]
+  DLQ[(Dead Letter Queue)]
+end
+
+%% DATA
+Postgres[(PostgreSQL)]
+OpenSearch[(OpenSearch)]
+InventoryDB[(Inventory Ledger DB)]
+
+%% LEGACY SYSTEM
+subgraph Legacy_System_Symfony4
+  LegacyAPI[Symfony4 API]
+  Orders[Orders Module\nGenerar Ordenes]
+  Invoices[Invoices Module\nFacturas]
+  Shipments[Shipments Module\nEnvios]
+  MySQL[(MySQL)]
+end
+
+%% EXTERNAL SERVICES
+Stripe[Stripe Payments]
+Marketplaces[Ebay / Amazon / Other Stores]
+EmailProvider[SMTP / Email Provider]
+
+%% OBSERVABILITY
+subgraph Observability
+  Logs[Pino Logs]
+  Tracing[OpenTelemetry Tracing]
+end
+
+%% CLIENT FLOW
+Client --> API
+Admin --> API
+
+API --> Auth
+API --> Users
+API --> Listings
+API --> Search
+API --> PreOrders
+
+%% SEARCH
+Listings --> OpenSearch
+Search --> OpenSearch
+
+%% PREORDER FLOW
+PreOrders --> Saga
+
+Saga --> InventoryReservation
+Saga --> Payments
+Saga --> Shipping
+Saga --> Notifications
+
+%% INVENTORY FLOW
+InventoryReservation --> InventoryLedger
+
+InventoryLedger --> InventoryDB
+
+%% PAYMENT FLOW
+Payments --> Stripe
+
+%% EVENT FLOW
+Payments --> Outbox
+InventoryReservation --> Outbox
+StockSync --> Outbox
+Notifications --> Outbox
+
+Outbox --> Queue
+
+%% WORKERS
+Queue --> EmailWorker
+Queue --> StockWorker
+Queue --> PaymentWorker
+Queue --> InventoryWorker
+Queue --> WebhookWorker
+
+%% WORKER ACTIONS
+EmailWorker --> EmailProvider
+StockWorker --> Marketplaces
+PaymentWorker --> Stripe
+InventoryWorker --> InventoryLedger
+WebhookWorker --> EventStore
+
+%% DLQ
+Queue --> DLQ
+
+%% REDIS USAGE
+API --> Cache
+API --> RateLimit
+API --> Idempotency
+Queue --> Redis
+
+%% LEGACY INTEGRATION
+Saga --> LegacyAPI
+
+LegacyAPI --> Orders
+LegacyAPI --> Invoices
+LegacyAPI --> Shipments
+
+Orders --> MySQL
+Invoices --> MySQL
+Shipments --> MySQL
+
+%% DATABASE
+Users --> Postgres
+Listings --> Postgres
+PreOrders --> Postgres
+Returns --> Postgres
+Warranty --> Postgres
+Shipping --> Postgres
+
+%% OBSERVABILITY
+API --> Logs
+API --> Tracing
+Workers --> Logs
+Workers --> Tracing
+LegacyAPI --> Logs
