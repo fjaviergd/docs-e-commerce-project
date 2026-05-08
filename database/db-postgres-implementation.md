@@ -1065,162 +1065,912 @@ VALUES
 
 ## Diccionario de datos
 
-### Schema `catalog`
+> Documenta todas las columnas de cada tabla: tipo PostgreSQL, restricciones y regla de negocio.
+>
+> **Convenciones de la tabla:**
+> - `Nullable` — `Sí` = acepta NULL · `No` = NOT NULL
+> - `Default` — `—` = sin valor por defecto declarado
+> - **†** = tabla append-only: nunca se ejecuta UPDATE ni DELETE sobre ninguna fila
+> - **‡** = FK lógica: la relación se valida en la capa de aplicación (NestJS), sin FK constraint en PostgreSQL
+
+---
+
+### Schema `catalog` — 15 tablas
 
 | Tabla | Propósito | Soft delete | Append-only |
 |-------|-----------|-------------|-------------|
 | `gts_categories` | Categorías planas de la GTS Store | `is_active = false` | No |
 | `listings` | Entidad central — listing simple, con variaciones o template | `status = inactive` | No |
-| `listing_pricing` | Precio de listing simple (1-1) | No | No |
-| `listing_variation_axes` | Ejes de variación (Color, RAM, etc.) | No | No |
+| `listing_pricing` | Precio del listing simple (1-1 con `listings`) | — | No |
+| `listing_variation_axes` | Ejes de variación (Color, RAM, etc.) | — | No |
 | `listing_variations` | Una variación = un SKU con precio propio | `status = inactive` | No |
-| `listing_images` | Imágenes del listing o de variación específica | No | No |
-| `listing_inventory_links` | Vínculo 1-1 entre ítem físico del CRM y listing | No — `status` activo | No |
-| `listing_stock` | Snapshot de stock disponible | No | No |
-| `listing_stock_movements` | Ledger de cambios de stock | — | **Sí** |
+| `listing_images` | Imágenes del listing o de variación específica | — | No |
+| `listing_inventory_links` | Vínculo 1-1 entre ítem físico del CRM y listing | — (`status` activo) | No |
+| `listing_stock` | Snapshot de stock disponible | — | No |
+| `listing_stock_movements` | Ledger de cambios de stock | — | **Sí** † |
 | `listing_channel_ebay` | Config de publicación en eBay | `deleted_at` | No |
-| `listing_channel_ebay_variations` | Offer eBay por variación | No | No |
+| `listing_channel_ebay_variations` | Offer de eBay por variación | — | No |
 | `listing_channel_gts_store` | Config de publicación en GTS Store | `deleted_at` | No |
 | `price_config` | Descuento global por canal (vigente) | `deleted_at` | No |
-| `price_config_history` | Historial de cambios de descuento | — | **Sí** |
+| `price_config_history` | Historial de cambios de descuento global | — | **Sí** † |
 | `shipping_restrictions` | Lista negra de ubicaciones de envío | `is_active = false` | No |
-
-#### Campos clave — `catalog.listings`
-
-| Campo | Descripción |
-|-------|-------------|
-| `listing_type` | `LISTING` = publicable; `TEMPLATE` = reutilizable, nunca se publica |
-| `status` | Máquina de estados completa — ver `final-database-schema.md` |
-| `is_variation` | `false` → usa `listing_pricing`; `true` → usa `listing_variations` |
-| `condition` | GTS Grade visible al cliente. No puede ser variación |
-| `r2v3_*` | Códigos R2V3 de certificación — respaldo del `condition` |
-| `shipping_policy` | `NORMAL` (ShipEngine), `FREIGHT` (precio fijo), `FREE` |
-| `fixed_shipping_cost` | Obligatorio para publicar. Fallback si ShipEngine falla |
-| `slug` | URL amigable única — ej. `cisco-catalyst-switch-3750` |
-| `draft_progress` | `{general, category, aspects, variations, images, pricing, shipping, inventory, channels}` — progreso del formulario |
-| `units_sold` | Contador de unidades vendidas — usado para métricas visibles |
-| `created_by` | `int` — ID del admin en el CRM (no es FK a `commerce.users`) |
-
-#### Campos clave — `catalog.listing_inventory_links`
-
-| Campo | Descripción |
-|-------|-------------|
-| `crm_inventory_id` | UNIQUE — 1 ítem físico CRM solo puede estar en 1 listing |
-| `crm_warehouse_id` | Bodega del ítem — denormalizado para queries rápidos |
-| `status` | `available` → libre; `reserved` → en checkout activo; `sold` → vendido |
-
-> **Query multi-bodega:** `SELECT COUNT(*) FROM catalog.listing_inventory_links WHERE listing_id = $1 AND crm_warehouse_id = $2 AND status = 'available'`
-
-#### Campos clave — `catalog.listing_pricing` / `listing_variations`
-
-| Campo | Descripción |
-|-------|-------------|
-| `base_price` | Precio ingresado por el empleado. Se muestra tachado en la tienda |
-| `store_discount_pct` | Snapshot del `price_config` al crear el listing. No cambia retroactivamente |
-| `store_price` | `base_price × (1 − store_discount_pct)` — precio final que paga el cliente |
-| `ebay_price` | En V1 = `base_price` (descuento eBay = 0%) |
 
 ---
 
-### Schema `commerce`
+#### `catalog.gts_categories`
+
+Categorías planas de la GTS Store (sin anidamiento). Nunca se borran para preservar FKs activas.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `name` | `varchar(100)` | No | — | Nombre visible en tienda. Ej: `Laptops`, `Desktops` |
+| `is_active` | `boolean` | No | `true` | **Soft delete** — `false` oculta la categoría sin romper FKs |
+| `sort_order` | `int` | No | `0` | Orden de presentación en la tienda |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `catalog.listings`
+
+Entidad central del catálogo. Cubre listing simple, con variaciones y templates. La mayoría de campos son nullable para soportar borradores incompletos.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `title` | `varchar(255)` | Sí | — | Nullable en draft |
+| `description` | `text` | Sí | — | |
+| `condition` | `enum` | Sí | — | GTS Grade: `EXCELLENT \| GOOD \| FAIR` — visible al cliente (RF-CAT-009). Solo para `LISTING`, no para templates |
+| `listing_type` | `enum` | No | — | `LISTING` = publicable · `TEMPLATE` = reutilizable, nunca se publica directamente |
+| `status` | `enum` | No | `'draft'` | Ciclo de vida: `draft → ready → scheduled → published → out_of_stock → unpublished → inactive` |
+| `source_type` | `enum` | No | `'ORIGINAL'` | `ORIGINAL \| FROM_TEMPLATE \| FROM_COPY` |
+| `source_id` | `uuid` | Sí | — | FK → `listings.id` — referencia al template o listing que originó la copia |
+| `is_variation` | `boolean` | No | `false` | `false` → usa `listing_pricing` · `true` → usa `listing_variations` |
+| `gts_category_id` | `uuid` | Sí | — | FK → `gts_categories.id` — obligatorio para publicar en GTS Store |
+| `currency` | `varchar(3)` | No | `'USD'` | |
+| `important_notes` | `jsonb` | Sí | — | Array de notas del producto |
+| `included_items` | `jsonb` | Sí | — | Array de ítems incluidos con el producto |
+| `r2v3_data_sanitization` | `enum` | Sí | — | Certificación R2V3: `NON_DATA` |
+| `r2v3_cosmetic` | `enum` | Sí | — | Certificación R2V3: `C1 \| C2 \| C3` (estado cosmético) |
+| `r2v3_functionality` | `enum` | Sí | — | Certificación R2V3: `F1 \| F2 \| F3` (estado funcional) |
+| `shipping_policy` | `enum` | Sí | — | `NORMAL` = ShipEngine calcula · `FREIGHT` = precio fijo · `FREE` = sin costo |
+| `fixed_shipping_cost` | `numeric(10,2)` | Sí | — | Costo fijo de envío. Obligatorio para publicar (RF-LOG-003). Fallback si ShipEngine falla |
+| `weight_value` | `numeric(10,3)` | Sí | — | |
+| `weight_unit` | `varchar(3)` | Sí | — | `LB \| OZ \| KG` |
+| `dim_length` | `numeric(10,3)` | Sí | — | |
+| `dim_width` | `numeric(10,3)` | Sí | — | |
+| `dim_height` | `numeric(10,3)` | Sí | — | |
+| `dim_unit` | `varchar(2)` | Sí | — | `IN \| CM` |
+| `ebay_category_id` | `varchar(50)` | Sí | — | ID de categoría en eBay |
+| `ebay_category_name` | `varchar(255)` | Sí | — | Nombre de categoría eBay — desnormalizado para UX |
+| `shared_aspects` | `jsonb` | Sí | — | Aspectos compartidos entre variaciones. Ej: `{ "Brand": "Cisco", "Model": "3750" }` |
+| `meta_title` | `varchar(255)` | Sí | — | SEO: título de la página del producto (RF-MKT-004) |
+| `meta_description` | `text` | Sí | — | SEO: descripción para motores de búsqueda (RF-MKT-004) |
+| `slug` | `varchar(255)` | Sí | — | **UNIQUE** — URL amigable. Ej: `cisco-catalyst-switch-3750` (RF-MKT-004) |
+| `units_sold` | `int` | No | `0` | Contador de unidades vendidas — incrementa al completar una orden (RF-BUS-004-1) |
+| `draft_progress` | `jsonb` | No | `'{}'` | Progreso del formulario multi-paso: `{general, category, aspects, variations, images, pricing, shipping, inventory, channels}` |
+| `created_by` | `int` | No | — | ID del admin en el CRM — **no es FK** a `commerce.users` |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `catalog.listing_pricing`
+
+Precio del listing simple (1-1 con `listings`). Solo existe cuando `is_variation = false`. Los descuentos son snapshots al momento de creación — no cambian retroactivamente si `price_config` cambia.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `listing_id` | `uuid` | No | — | FK **UNIQUE** → `listings.id` ON DELETE CASCADE |
+| `sku` | `varchar(100)` | Sí | — | Nullable en draft |
+| `base_price` | `numeric(10,2)` | Sí | — | Precio ingresado por el empleado. Se muestra tachado en tienda |
+| `ebay_discount_pct` | `numeric(5,4)` | Sí | — | Snapshot del `price_config` al crear. Ej: `0.0500` = 5%. En V1 = `0.0000` |
+| `ebay_price` | `numeric(10,2)` | Sí | — | Calculado: `base_price × (1 − ebay_discount_pct)` |
+| `store_discount_pct` | `numeric(5,4)` | Sí | — | Snapshot del `price_config` al crear |
+| `store_price` | `numeric(10,2)` | Sí | — | Calculado: `base_price × (1 − store_discount_pct)` — precio final al cliente |
+
+---
+
+#### `catalog.listing_variation_axes`
+
+Define los ejes de variación del listing (Ej: Color, RAM). Solo existe cuando `is_variation = true`.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `listing_id` | `uuid` | No | — | FK → `listings.id` ON DELETE CASCADE |
+| `aspect_name` | `varchar(100)` | No | — | Nombre del eje. Ej: `Color`, `Storage Capacity`, `RAM` |
+| `values` | `jsonb` | No | — | Valores posibles. Ej: `["Space Gray", "Gold", "Sierra Blue"]` |
+| `affects_image` | `boolean` | No | `false` | `true` → cada variación puede tener imagen propia |
+| `sort_order` | `int` | No | `0` | |
+
+---
+
+#### `catalog.listing_variations`
+
+Una variación = un SKU con precio propio. Solo existe cuando `is_variation = true`. Soft delete mediante `status = inactive`.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `listing_id` | `uuid` | No | — | FK → `listings.id` ON DELETE CASCADE |
+| `sku` | `varchar(100)` | Sí | — | Nullable en draft |
+| `label` | `varchar(255)` | Sí | — | Etiqueta de presentación. Ej: `256GB / Gold` |
+| `aspects` | `jsonb` | Sí | — | Combinación de valores. Ej: `{ "Color": ["Gold"], "Storage": ["256 GB"] }` |
+| `base_price` | `numeric(10,2)` | Sí | — | Precio base ingresado por el empleado |
+| `ebay_discount_pct` | `numeric(5,4)` | Sí | — | Snapshot del config global al crear |
+| `ebay_price` | `numeric(10,2)` | Sí | — | Calculado: `base_price × (1 − ebay_discount_pct)` |
+| `store_discount_pct` | `numeric(5,4)` | Sí | — | Snapshot del config global al crear |
+| `store_price` | `numeric(10,2)` | Sí | — | Calculado: `base_price × (1 − store_discount_pct)` |
+| `status` | `enum` | No | `'active'` | **Soft delete**: `active \| out_of_stock \| inactive` |
+| `sort_order` | `int` | No | `0` | |
+
+---
+
+#### `catalog.listing_images`
+
+Imágenes del listing o de variación específica. `listing_variation_id = NULL` → imagen del grupo; `NOT NULL` → imagen propia de esa variación.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `listing_id` | `uuid` | No | — | FK → `listings.id` ON DELETE CASCADE |
+| `listing_variation_id` | `uuid` | Sí | — | FK → `listing_variations.id` ON DELETE CASCADE · `NULL` = imagen del grupo |
+| `original_url` | `varchar(500)` | No | — | URL en servidor privado — fuente de verdad |
+| `ebay_url` | `varchar(500)` | Sí | — | Resultado de `createImageFromUrl` de eBay API |
+| `gts_store_url` | `varchar(500)` | Sí | — | URL pública en la GTS Store |
+| `ebay_url_expires_at` | `date` | Sí | — | Las URLs de eBay expiran — se renuevan antes de la fecha límite |
+| `sort_order` | `int` | No | `0` | |
+| `is_primary` | `boolean` | No | `false` | Imagen principal del listing o variación |
+
+---
+
+#### `catalog.listing_inventory_links`
+
+1 fila = 1 ítem físico del CRM vinculado al listing. `crm_inventory_id UNIQUE` garantiza que un ítem físico solo puede pertenecer a un listing.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `listing_id` | `uuid` | No | — | FK → `listings.id` ON DELETE RESTRICT |
+| `listing_variation_id` | `uuid` | Sí | — | FK → `listing_variations.id` ON DELETE RESTRICT · `NULL` = listing simple |
+| `crm_inventory_id` | `int` | No | — | **UNIQUE** — ID del ítem en el CRM. 1 ítem CRM = 1 listing |
+| `crm_po_id` | `varchar(100)` | Sí | — | PO de origen en el CRM |
+| `crm_po_line` | `varchar(100)` | Sí | — | Línea del PO |
+| `crm_iq_id` | `varchar(100)` | Sí | — | IQ de referencia en el CRM |
+| `crm_warehouse_id` | `int` | No | — | Bodega del ítem — desnormalizado para queries de checkout multi-bodega |
+| `status` | `enum` | No | `'available'` | `available` → libre · `reserved` → en checkout activo · `sold` → vendido |
+
+> **Query multi-bodega (RF-LOG-006-4):** `SELECT COUNT(*) FROM catalog.listing_inventory_links WHERE listing_id = $1 AND crm_warehouse_id = $2 AND status = 'available'`
+
+---
+
+#### `catalog.listing_stock`
+
+Snapshot del stock disponible. 1 fila por listing simple o por variación. Índices únicos parciales manejan el `NULL` en `listing_variation_id`. Se actualiza en la misma transacción que `listing_stock_movements`.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `listing_id` | `uuid` | No | — | FK → `listings.id` ON DELETE RESTRICT |
+| `listing_variation_id` | `uuid` | Sí | — | FK → `listing_variations.id` · `NULL` = listing simple |
+| `quantity_available` | `int` | No | `0` | `CHECK (quantity_available >= 0)` — nunca negativo |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `catalog.listing_stock_movements` †
+
+**Ledger append-only** — nunca se actualiza ni borra. `SUM(quantity_delta)` debe coincidir siempre con `listing_stock.quantity_available`. Para corregir un movimiento incorrecto, agregar una fila compensatoria con `movement_type = ADJUSTMENT`.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `listing_id` | `uuid` | No | — | FK → `listings.id` |
+| `listing_variation_id` | `uuid` | Sí | — | FK → `listing_variations.id` · `NULL` = listing simple |
+| `quantity_delta` | `int` | No | — | Cambio de stock (+/-). Ej: `-1` = venta · `+1` = devolución |
+| `quantity_after` | `int` | No | — | Stock resultante tras el movimiento. `CHECK (quantity_after >= 0)` |
+| `movement_type` | `enum` | No | — | `INITIAL \| SALE_EBAY \| SALE_GTS_STORE \| RETURN_EBAY \| RETURN_GTS_STORE \| CANCELLED_SALE \| MANUAL_ADD \| MANUAL_REMOVE \| ADJUSTMENT \| SYNC_EBAY \| SYNC_GTS_STORE \| LISTING_DEACTIVATED \| LISTING_REACTIVATED` |
+| `channel` | `enum` | Sí | — | `EBAY \| GTS_STORE \| MANUAL \| SYSTEM` |
+| `reference_id` | `varchar(255)` | Sí | — | ID de la entidad origen. Ej: `order_id`, `ebay_order_id` |
+| `notes` | `text` | Sí | — | Notas adicionales — obligatorio para `ADJUSTMENT` |
+| `created_by` | `int` | Sí | — | ID del admin CRM si el movimiento fue manual |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `catalog.listing_channel_ebay`
+
+Configuración y estado de sincronización del canal eBay por listing. `deleted_at` conserva el historial de configuración al desvincular el canal.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `listing_id` | `uuid` | No | — | FK **UNIQUE** → `listings.id` ON DELETE RESTRICT |
+| `ebay_linked_account_id` | `int` | No | — | Cuenta eBay vinculada en el CRM |
+| `ebay_listing_id` | `varchar(50)` | Sí | — | ID del listing en eBay — `null` hasta primera publicación |
+| `ebay_sku` | `varchar(100)` | Sí | — | |
+| `ebay_offer_id` | `varchar(50)` | Sí | — | ID del offer en eBay Inventory API (listing simple) |
+| `ebay_inventory_group_key` | `varchar(100)` | Sí | — | Key del inventory group (listing con variaciones) |
+| `ebay_merchant_location_key` | `varchar(100)` | Sí | — | Ubicación de inventario registrada en eBay |
+| `ebay_fulfillment_policy_id` | `varchar(50)` | Sí | — | Política de envío aplicada |
+| `ebay_payment_policy_id` | `varchar(50)` | Sí | — | Política de pago aplicada |
+| `ebay_return_policy_id` | `varchar(50)` | Sí | — | Política de devolución aplicada |
+| `ebay_store_category_names` | `jsonb` | No | `'[]'` | Categorías de la tienda eBay |
+| `marketplace_id` | `varchar(20)` | No | `'EBAY_US'` | Marketplace destino |
+| `ebay_listing_format` | `varchar(20)` | No | `'FIXED_PRICE'` | |
+| `ebay_listing_duration` | `varchar(10)` | No | `'GTC'` | Good Till Cancelled |
+| `ebay_listing_description_html` | `text` | Sí | — | Descripción HTML personalizada para eBay |
+| `scheduled_at` | `timestamptz` | Sí | — | Fecha de publicación programada |
+| `sync_status` | `enum` | No | `'not_requested'` | `not_requested \| scheduled \| pending \| success \| failed` |
+| `sync_error_message` | `text` | Sí | — | Mensaje del último error de sincronización |
+| `published_at` | `timestamptz` | Sí | — | Timestamp de primera publicación exitosa |
+| `last_synced_at` | `timestamptz` | Sí | — | Timestamp de última sincronización |
+| `deleted_at` | `timestamptz` | Sí | — | **Soft delete** — preserva historial de configuración |
+
+---
+
+#### `catalog.listing_channel_ebay_variations`
+
+Un offer de eBay por variación. Solo existe para listings con `is_variation = true`.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `listing_channel_ebay_id` | `uuid` | No | — | FK → `listing_channel_ebay.id` ON DELETE CASCADE |
+| `listing_variation_id` | `uuid` | No | — | FK → `listing_variations.id` ON DELETE RESTRICT |
+| `ebay_sku` | `varchar(100)` | No | — | SKU del offer en eBay |
+| `ebay_offer_id` | `varchar(50)` | Sí | — | ID del offer — `null` hasta primera publicación |
+
+---
+
+#### `catalog.listing_channel_gts_store`
+
+Configuración y estado de sincronización del canal GTS Store por listing.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `listing_id` | `uuid` | No | — | FK **UNIQUE** → `listings.id` ON DELETE RESTRICT |
+| `gts_store_product_id` | `int` | Sí | — | ID del producto en la plataforma GTS Store |
+| `gts_store_slug` | `varchar(255)` | Sí | — | Slug del producto en GTS Store |
+| `gts_store_url` | `varchar(500)` | Sí | — | URL pública del producto |
+| `scheduled_at` | `timestamptz` | Sí | — | Fecha de publicación programada |
+| `sync_status` | `enum` | No | `'not_requested'` | `not_requested \| scheduled \| pending \| success \| failed` |
+| `sync_error_message` | `text` | Sí | — | Mensaje del último error |
+| `published_at` | `timestamptz` | Sí | — | Primera publicación exitosa |
+| `last_synced_at` | `timestamptz` | Sí | — | Última sincronización |
+| `deleted_at` | `timestamptz` | Sí | — | **Soft delete** — preserva historial de configuración |
+
+---
+
+#### `catalog.price_config`
+
+Descuento global vigente por canal. Los porcentajes se copian como snapshot al crear el listing — cambios futuros no afectan listings existentes.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `channel` | `varchar(20)` | No | — | Canal al que aplica. Ej: `EBAY`, `GTS_STORE` |
+| `ebay_linked_account_id` | `int` | Sí | — | Cuenta eBay si el channel es `EBAY` |
+| `discount_pct` | `numeric(5,4)` | No | — | Descuento vigente. Ej: `0.0500` = 5% |
+| `updated_by` | `int` | No | — | ID del admin CRM |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+| `deleted_at` | `timestamptz` | Sí | — | **Soft delete** |
+
+---
+
+#### `catalog.price_config_history` †
+
+**Ledger append-only** del historial de cambios al descuento global. Nunca se borra.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `channel` | `varchar(20)` | No | — | Canal afectado |
+| `ebay_linked_account_id` | `int` | Sí | — | |
+| `discount_pct_previous` | `numeric(5,4)` | No | — | Descuento antes del cambio |
+| `discount_pct_new` | `numeric(5,4)` | No | — | Descuento después del cambio |
+| `changed_by` | `int` | No | — | ID del admin CRM |
+| `changed_at` | `timestamptz` | No | `NOW()` | |
+| `notes` | `text` | Sí | — | Motivo del cambio |
+
+---
+
+#### `catalog.shipping_restrictions`
+
+Lista negra de ubicaciones de envío configurada por el admin. `is_active = false` desactiva la restricción sin borrarla (RF-LOG-002).
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `restriction_type` | `enum` | No | — | `STATE \| ZIP_CODE \| COUNTRY \| MILITARY` |
+| `value` | `varchar(50)` | No | — | Valor de la restricción. Ej: `CA`, `90210`, `US`, `APO` |
+| `label` | `varchar(100)` | No | — | Etiqueta legible. Ej: `California` |
+| `is_active` | `boolean` | No | `true` | **Soft delete** |
+| `created_by` | `int` | No | — | ID del admin CRM |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+### Schema `commerce` — 20 tablas
 
 | Tabla | Propósito | Soft delete | Append-only |
 |-------|-----------|-------------|-------------|
 | `users` | Clientes registrados del e-commerce | `deleted_at` | No |
-| `user_crm_links` | Vínculo opcional con cuenta CRM | No | No |
-| `user_addresses` | Direcciones guardadas (máx. `system_config.max_addresses_per_user`) | No | No |
-| `user_notification_preferences` | Preferencias de email (1-1 con users) | No | No |
-| `auth_tokens` | Tokens de verificación de email y reset de contraseña | No | No |
+| `user_crm_links` | Vínculo opcional con cuenta CRM | — | No |
+| `user_addresses` | Direcciones guardadas (máx. `system_config.max_addresses_per_user`) | — | No |
+| `user_notification_preferences` | Preferencias de email (1-1 con `users`) | — | No |
+| `auth_tokens` | Tokens de verificación de email y reset de contraseña | — | No |
 | `carts` | Carrito para registrados y guests | `status = expired` | No |
-| `cart_items` | Ítems del carrito con precio snapshot | No | No |
-| `orders` | Orden de compra con snapshot completo del cliente | No | No |
-| `order_addresses` | Snapshot de dirección de envío y facturación | No | No |
-| `order_items` | Líneas de la orden con snapshot del producto | No | No |
-| `order_shipments` | Un shipment por bodega involucrada | No | No |
-| `order_shipment_items` | Puente `order_items ↔ order_shipments` | No | No |
+| `cart_items` | Ítems del carrito con precio snapshot | — | No |
+| `orders` | Orden de compra con snapshot completo del cliente | — | No |
+| `order_addresses` | Snapshot de dirección de envío y facturación | — | No |
+| `order_items` | Líneas de la orden con snapshot del producto | — | No |
+| `order_shipments` | Un shipment por bodega involucrada | — | No |
+| `order_shipment_items` | Puente `order_items ↔ order_shipments` | — | No |
 | `payment_intents` | Ciclo de vida del pago — provider-agnostic | `deleted_at` | No |
-| `order_status_history` | Historial de estados de la orden | — | **Sí** |
-| `inventory_reservations` | Ítems reservados durante el checkout Saga | No | No |
-| `saga_instances` | Estado del Saga Orchestrator por orden | No | No |
-| `order_return_metadata` | Metadata de devolución parcial o total | No | No |
-| `guest_order_access` | Token de acceso seguro para invitados | No | No |
+| `order_status_history` | Historial de transiciones de estado de la orden | — | **Sí** † |
+| `inventory_reservations` | Ítems reservados durante el checkout Saga | — | No |
+| `saga_instances` | Estado del Saga Orchestrator por orden | — | No |
+| `order_return_metadata` | Metadata de devolución parcial o total | — | No |
+| `guest_order_access` | Token de acceso seguro para invitados | — | No |
 | `faqs` | Preguntas frecuentes gestionadas por admins CRM | `is_active = false` | No |
-| `system_config` | Parámetros operativos configurables desde el panel admin | No | No |
+| `system_config` | Parámetros operativos configurables sin código | — | No |
 
-#### Campos clave — `commerce.orders`
+---
 
-| Campo | Descripción |
-|-------|-------------|
-| `id` | UUID interno — nunca se muestra al cliente |
-| `visible_order_id` | `GTS-YYYY-{so_id}` — se genera SOLO al recibir `so_id` del CRM |
-| `so_id` | ID de la orden en la tabla `so_info` del CRM |
-| `customer_*` | Snapshot del cliente al checkout — integridad histórica |
-| `label_generated` | `true` cuando cualquier `order_shipments.label_generated_at` se llena. Bloquea cancelación total |
-| `has_stock_conflict` | Flag de sobreventa detectada (eBay + GTS Store simultáneos) |
+#### `commerce.users`
 
-#### Campos clave — `commerce.payment_intents`
+Clientes registrados del e-commerce. Independiente del CRM. Los admins del CRM **no** están en esta tabla.
 
-| Campo | Descripción |
-|-------|-------------|
-| `idempotency_key` | Generado por el backend. Evita doble cobro en resubmits |
-| `provider_payment_intent_id` | ID del PaymentIntent en Stripe (`pi_3OaB...`) |
-| `client_secret` | Solo para frontend Stripe SDK — nunca exponer en listados ni logs |
-| `retry_count` / `max_retries` | Gestionados por el `PaymentWorker`. Default: máx. 3 reintentos |
-| `refunded_amount` | Monto total reembolsado acumulado (no cambia `status` principal) |
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `first_name` | `varchar(100)` | No | — | |
+| `last_name` | `varchar(100)` | No | — | |
+| `email` | `varchar(255)` | No | — | **UNIQUE** — clave de autenticación |
+| `password_hash` | `text` | No | — | Hash bcrypt — nunca texto plano |
+| `phone` | `varchar(30)` | Sí | — | |
+| `email_verified` | `boolean` | No | `false` | `true` tras confirmación con `auth_tokens` |
+| `email_verified_at` | `timestamptz` | Sí | — | Timestamp de verificación |
+| `status` | `enum` | No | `'active'` | `active \| blocked` — `blocked` impide el login |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+| `deleted_at` | `timestamptz` | Sí | — | **Soft delete** — el email queda bloqueado para re-registro |
 
-#### Campos clave — `commerce.carts`
+---
 
-| Campo | Descripción |
-|-------|-------------|
-| `id` | Se usa como `cartId` en cookie del cliente |
-| `user_id` | `NULL` = carrito guest. Al hacer login se fusiona con el carrito del usuario |
-| `expires_at` | 7 días para guest; extendido para registrados |
+#### `commerce.user_crm_links`
 
-#### Campos clave — `commerce.system_config`
+Vínculo opcional entre cuenta del e-commerce y cuenta CRM. Se crea tras verificación mediante código generado en el CRM.
 
-| `key` | `value` default | Descripción |
-|-------|-----------------|-------------|
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `user_id` | `uuid` | No | — | FK → `users.id` ON DELETE CASCADE |
+| `crm_email` | `varchar(255)` | No | — | Email de la cuenta en el CRM |
+| `crm_reference_id` | `varchar(100)` | Sí | — | ID de referencia en el CRM |
+| `linked_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.user_addresses`
+
+Direcciones guardadas por usuario registrado. Máximo configurable en `system_config.max_addresses_per_user` (default: 20).
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `user_id` | `uuid` | No | — | FK → `users.id` ON DELETE CASCADE |
+| `recipient_name` | `varchar(255)` | No | — | Nombre del destinatario |
+| `phone` | `varchar(30)` | Sí | — | |
+| `address_line1` | `varchar(255)` | No | — | |
+| `address_line2` | `varchar(255)` | Sí | — | Apartamento, suite, etc. |
+| `city` | `varchar(100)` | No | — | |
+| `state` | `varchar(100)` | No | — | |
+| `postal_code` | `varchar(20)` | No | — | |
+| `country` | `varchar(100)` | No | `'US'` | |
+| `is_default` | `boolean` | No | `false` | Dirección predeterminada del usuario |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.user_notification_preferences`
+
+Preferencias de email por usuario. 1-1 con `users`. `email_security` no puede desactivarse desde la UI — protege los flujos de verificación y reset de contraseña.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `user_id` | `uuid` | No | — | FK **UNIQUE** → `users.id` ON DELETE CASCADE |
+| `email_order_updates` | `boolean` | No | `true` | Actualizaciones de estado de la orden |
+| `email_shipping_updates` | `boolean` | No | `true` | Actualizaciones de envío y tracking |
+| `email_marketing` | `boolean` | No | `false` | Emails promocionales — opt-in explícito |
+| `email_security` | `boolean` | No | `true` | **No editable por el usuario** — protege tokens de verificación y reset |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.auth_tokens`
+
+Tokens temporales de verificación de email y recuperación de contraseña. Se almacena el hash — nunca el token en texto plano (RF-USR-006).
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `user_id` | `uuid` | No | — | FK → `users.id` ON DELETE CASCADE |
+| `type` | `enum` | No | — | `verify_email \| reset_password` |
+| `token_hash` | `text` | No | — | Hash SHA-256 del token — el token real se envía solo por email |
+| `expires_at` | `timestamptz` | No | — | TTL del token |
+| `used_at` | `timestamptz` | Sí | — | Timestamp de uso — el token queda invalidado tras usarse |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.carts`
+
+Carrito para usuarios registrados y guests. `user_id = NULL` → carrito guest, identificado por el UUID del carrito almacenado en cookie.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK — se almacena en cookie del cliente como `cartId` |
+| `user_id` | `uuid` | Sí | — | FK → `users.id` ON DELETE SET NULL · `NULL` = carrito guest |
+| `status` | `enum` | No | `'active'` | `active \| merged \| expired` — `merged` al fusionar carrito guest con registrado tras login |
+| `expires_at` | `timestamptz` | No | — | 7 días para guest · extendido para registrados |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.cart_items`
+
+Ítems del carrito. `price_snapshot` es informativo — el precio final al pagar siempre se recalcula desde el listing vigente.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `cart_id` | `uuid` | No | — | FK → `carts.id` ON DELETE CASCADE |
+| `listing_id` | `uuid` | No | — | ‡ FK lógica → `catalog.listings.id` |
+| `listing_variation_id` | `uuid` | Sí | — | ‡ FK lógica → `catalog.listing_variations.id` |
+| `quantity` | `int` | No | — | `CHECK (quantity > 0)` |
+| `price_snapshot` | `numeric(10,2)` | No | — | Precio al agregar al carrito — solo informativo, no se usa para cobrar |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.orders`
+
+Orden de compra con snapshot completo del cliente e ítems. No depende de que el listing exista tras la compra (integridad histórica contable).
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK — UUID interno, nunca se muestra al cliente |
+| `visible_order_id` | `varchar(50)` | Sí | — | **UNIQUE** — formato `GTS-YYYY-{so_id}` — generado **solo** al recibir `so_id` del CRM (RF-ORD-001) |
+| `so_id` | `varchar(50)` | Sí | — | ID de la orden en la tabla `so_info` del CRM |
+| `user_id` | `uuid` | Sí | — | FK → `users.id` ON DELETE SET NULL · `NULL` = orden guest |
+| `customer_first_name` | `varchar(100)` | No | — | Snapshot del cliente al checkout — inmutable |
+| `customer_last_name` | `varchar(100)` | No | — | |
+| `customer_email` | `varchar(255)` | No | — | |
+| `customer_phone` | `varchar(30)` | Sí | — | |
+| `customer_type` | `enum` | No | — | `guest \| registered` |
+| `status` | `enum` | No | `'pending'` | `pending → paid → processing → shipped → delivered → completed / cancelled / partially_returned / fully_returned` |
+| `currency` | `varchar(3)` | No | `'USD'` | |
+| `subtotal` | `numeric(10,2)` | No | — | |
+| `shipping_cost` | `numeric(10,2)` | No | — | |
+| `tax_amount` | `numeric(10,2)` | No | — | |
+| `total` | `numeric(10,2)` | No | — | |
+| `label_generated` | `boolean` | No | `false` | `true` cuando cualquier `order_shipments.label_generated_at IS NOT NULL` — **bloquea cancelación total** (RF-ORD-001 RN-4) |
+| `label_generated_at` | `timestamptz` | Sí | — | Timestamp de la primera label generada |
+| `has_stock_conflict` | `boolean` | No | `false` | Flag de sobreventa detectada (eBay + GTS Store simultáneos) (RF-INV-002) |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.order_addresses`
+
+Snapshot de dirección de envío y facturación al momento del checkout. Inmutable tras creación.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `order_id` | `uuid` | No | — | FK → `orders.id` ON DELETE RESTRICT |
+| `type` | `varchar(20)` | No | — | `CHECK (type IN ('shipping', 'billing'))` |
+| `recipient_name` | `varchar(255)` | No | — | |
+| `phone` | `varchar(30)` | Sí | — | |
+| `address_line1` | `varchar(255)` | No | — | |
+| `address_line2` | `varchar(255)` | Sí | — | |
+| `city` | `varchar(100)` | No | — | |
+| `state` | `varchar(100)` | No | — | |
+| `postal_code` | `varchar(20)` | No | — | |
+| `country` | `varchar(100)` | No | — | |
+
+---
+
+#### `commerce.order_items`
+
+Líneas de la orden con snapshot completo del producto al comprar. `crm_warehouse_id` indica la bodega de origen del ítem al hacer checkout.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `order_id` | `uuid` | No | — | FK → `orders.id` ON DELETE RESTRICT |
+| `listing_id` | `uuid` | No | — | ‡ FK lógica → `catalog.listings.id` — referencia preservada aunque el listing se inactive |
+| `listing_variation_id` | `uuid` | Sí | — | ‡ FK lógica → `catalog.listing_variations.id` |
+| `product_name` | `varchar(255)` | No | — | Snapshot del nombre al comprar |
+| `product_sku` | `varchar(100)` | Sí | — | Snapshot del SKU |
+| `product_condition` | `varchar(50)` | Sí | — | Snapshot del `condition` del listing |
+| `quantity` | `int` | No | — | `CHECK (quantity > 0)` |
+| `unit_price` | `numeric(10,2)` | No | — | `store_price` vigente al checkout |
+| `subtotal` | `numeric(10,2)` | No | — | `unit_price × quantity` |
+| `crm_warehouse_id` | `int` | No | — | Bodega de origen — desnormalizado para lógica multi-bodega |
+
+---
+
+#### `commerce.order_shipments`
+
+Un shipment por bodega involucrada en la orden (RF-LOG-006). `label_generated_at` activa `orders.label_generated = true` en la capa de aplicación.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `order_id` | `uuid` | No | — | FK → `orders.id` ON DELETE RESTRICT |
+| `crm_warehouse_id` | `int` | No | — | Bodega de origen del shipment |
+| `status` | `enum` | No | `'pending'` | `pending → label_generated → shipped → delivered / failed` |
+| `carrier` | `varchar(50)` | Sí | — | Transportista. Ej: `FedEx`, `UPS` |
+| `service` | `varchar(100)` | Sí | — | Servicio de envío. Ej: `FedEx Ground` |
+| `shipping_cost` | `numeric(10,2)` | No | — | Costo calculado por ShipEngine |
+| `insurance_selected` | `boolean` | No | `false` | Si el cliente seleccionó seguro |
+| `insurance_cost` | `numeric(10,2)` | Sí | — | Costo del seguro si aplica |
+| `tracking_number` | `varchar(100)` | Sí | — | |
+| `tracking_url` | `varchar(500)` | Sí | — | URL de rastreo del carrier |
+| `label_url` | `varchar(500)` | Sí | — | URL del PDF de la etiqueta |
+| `shipengine_shipment_id` | `varchar(100)` | Sí | — | ID del shipment en ShipEngine |
+| `label_generated_at` | `timestamptz` | Sí | — | Timestamp de generación de label — activa bloqueo de cancelación |
+| `shipped_at` | `timestamptz` | Sí | — | Confirmado por ShipEngine webhook |
+| `delivered_at` | `timestamptz` | Sí | — | Confirmado por ShipEngine webhook |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.order_shipment_items`
+
+Tabla puente `order_items ↔ order_shipments`. Necesaria para emails por shipment y detalle del comprobante por bodega (RF-NOT-001).
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `order_shipment_id` | `uuid` | No | — | FK → `order_shipments.id` ON DELETE RESTRICT |
+| `order_item_id` | `uuid` | No | — | FK → `order_items.id` ON DELETE RESTRICT |
+| `quantity` | `int` | No | — | `CHECK (quantity > 0)` — puede ser subconjunto de `order_items.quantity` en envíos parciales |
+
+---
+
+#### `commerce.payment_intents`
+
+Ciclo de vida completo del pago. Diseño provider-agnostic (Stripe en V1). Soporta 3DS, reintentos automáticos y reembolsos parciales acumulados.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `order_id` | `uuid` | No | — | FK → `orders.id` ON DELETE RESTRICT |
+| `idempotency_key` | `varchar(255)` | No | — | **UNIQUE** — generado por el backend. Evita doble cobro en resubmits |
+| `provider` | `varchar(50)` | No | `'stripe'` | Provider de pago. Extensible a `paypal`, `braintree` |
+| `provider_payment_intent_id` | `varchar(100)` | No | — | **UNIQUE** — ID del PaymentIntent en Stripe. Ej: `pi_3OaB...` |
+| `provider_charge_id` | `varchar(100)` | Sí | — | ID del Charge en Stripe — disponible tras `payment_intent.succeeded` |
+| `amount` | `numeric(10,2)` | No | — | Monto total a cobrar |
+| `currency` | `varchar(3)` | No | `'USD'` | |
+| `status` | `enum` | No | `'created'` | `created → requires_payment_method → requires_confirmation → requires_action → processing → succeeded / failed / cancelled` |
+| `payment_method_type` | `varchar(50)` | Sí | — | `card \| apple_pay \| google_pay` |
+| `card_last4` | `varchar(4)` | Sí | — | Últimos 4 dígitos de la tarjeta — para mostrar en UI |
+| `card_brand` | `varchar(20)` | Sí | — | `visa \| mastercard \| amex`, etc. |
+| `client_secret` | `text` | Sí | — | Solo para Stripe SDK en frontend (flujo 3DS). **Nunca exponer en listados ni logs** |
+| `failure_code` | `varchar(100)` | Sí | — | Código de error de Stripe. Ej: `card_declined` |
+| `failure_message` | `text` | Sí | — | Mensaje de error localizable |
+| `retry_count` | `int` | No | `0` | Reintentos ejecutados por el `PaymentWorker` |
+| `max_retries` | `int` | No | `3` | Máximo de reintentos permitidos |
+| `next_retry_at` | `timestamptz` | Sí | — | Timestamp para el próximo reintento (backoff exponencial) |
+| `refunded_amount` | `numeric(10,2)` | No | `0` | Monto reembolsado acumulado — no modifica `status` principal |
+| `metadata` | `jsonb` | Sí | — | Datos adicionales del provider |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+| `deleted_at` | `timestamptz` | Sí | — | **Soft delete** |
+
+---
+
+#### `commerce.order_status_history` †
+
+**Ledger append-only** de transiciones de estado de la orden. Nunca se actualiza. `changed_by = NULL` → cambio automático por sistema o webhook.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `order_id` | `uuid` | No | — | FK → `orders.id` ON DELETE RESTRICT |
+| `status` | `varchar(50)` | No | — | Estado nuevo tras la transición |
+| `changed_by` | `uuid` | Sí | — | FK → `users.id` ON DELETE SET NULL · `NULL` = sistema o webhook |
+| `source` | `enum` | No | — | `admin \| system \| shipengine_webhook` |
+| `notes` | `text` | Sí | — | Notas opcionales del cambio |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.inventory_reservations`
+
+Ítems reservados durante el flujo Saga de checkout. `expires_at` libera automáticamente la reserva si el checkout no se completa en 15 min.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `order_id` | `uuid` | No | — | FK → `orders.id` ON DELETE RESTRICT |
+| `listing_id` | `uuid` | No | — | ‡ FK lógica → `catalog.listings.id` |
+| `listing_variation_id` | `uuid` | Sí | — | ‡ FK lógica → `catalog.listing_variations.id` |
+| `crm_inventory_id` | `int` | No | — | Ítem físico específico reservado en el CRM |
+| `quantity` | `int` | No | — | `CHECK (quantity > 0)` |
+| `status` | `enum` | No | `'pending'` | `pending \| confirmed \| released \| expired` |
+| `expires_at` | `timestamptz` | No | — | TTL de la reserva (15 min post-checkout iniciado) |
+| `released_at` | `timestamptz` | Sí | — | Timestamp de liberación |
+| `release_reason` | `varchar(50)` | Sí | — | Motivo de liberación: `expired`, `payment_failed`, `cancelled` |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.saga_instances`
+
+Estado persistido del Saga Orchestrator por orden. Permite recuperación tras crashes del servicio. `steps` guarda el log de ejecución de cada paso con estado y error si aplica.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `saga_type` | `varchar(50)` | No | — | Tipo de saga: `checkout \| return` |
+| `order_id` | `uuid` | No | — | FK → `orders.id` ON DELETE RESTRICT |
+| `status` | `enum` | No | `'started'` | `started → inventory_reserved → payment_processing → succeeded / compensating → compensated / failed` |
+| `current_step` | `varchar(100)` | Sí | — | Paso activo en ejecución |
+| `steps` | `jsonb` | No | `'[]'` | Array: `[{ step, status, completed_at, error }]` |
+| `compensation_steps` | `jsonb` | Sí | — | Pasos de compensación ejecutados en caso de fallo |
+| `failure_reason` | `text` | Sí | — | Descripción del error que detuvo la saga |
+| `started_at` | `timestamptz` | No | `NOW()` | |
+| `completed_at` | `timestamptz` | Sí | — | |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.order_return_metadata`
+
+Metadata de devolución registrada manualmente por el admin. 1-1 con la orden. `returned_items` detalla ítems y cantidades devueltas.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `order_id` | `uuid` | No | — | FK **UNIQUE** → `orders.id` ON DELETE RESTRICT |
+| `return_type` | `varchar(20)` | No | — | `CHECK (return_type IN ('partial', 'full'))` |
+| `return_reason` | `text` | Sí | — | Motivo de la devolución |
+| `returned_items` | `jsonb` | Sí | — | Array: `[{ order_item_id, quantity, notes }]` |
+| `refund_amount` | `numeric(10,2)` | Sí | — | Monto reembolsado |
+| `refund_method` | `varchar(50)` | Sí | — | Ej: `stripe_refund`, `store_credit` |
+| `received_at` | `timestamptz` | Sí | — | Fecha de recepción física del producto |
+| `processed_by` | `uuid` | No | — | FK → `users.id` — admin que procesó la devolución |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.guest_order_access`
+
+Token de acceso seguro para que invitados vean su orden via link en el email de confirmación (RF-PCV-001).
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `order_id` | `uuid` | No | — | FK → `orders.id` ON DELETE RESTRICT |
+| `access_token_hash` | `text` | No | — | Hash SHA-256 del token — el token real se envía solo por email |
+| `expires_at` | `timestamptz` | No | — | TTL del token de acceso |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.faqs`
+
+Preguntas frecuentes gestionadas por admins CRM. `created_by` / `updated_by` son IDs del CRM, no UUIDs de `commerce.users`.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `question` | `text` | No | — | |
+| `answer` | `text` | No | — | |
+| `is_active` | `boolean` | No | `true` | **Soft delete** — `false` oculta en tienda |
+| `sort_order` | `int` | No | `0` | |
+| `created_by` | `int` | No | — | ID admin CRM |
+| `updated_by` | `int` | Sí | — | ID admin CRM |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.system_config`
+
+Parámetros operativos configurables desde el panel admin sin requerir un deploy.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `key` | `varchar(100)` | No | — | **UNIQUE** — identificador del parámetro |
+| `value` | `varchar(500)` | No | — | Valor del parámetro |
+| `description` | `text` | Sí | — | |
+| `updated_by` | `int` | No | — | ID superadmin CRM |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+**Valores iniciales (seed):**
+
+| `key` | `value` | Descripción |
+|-------|---------|-------------|
 | `max_addresses_per_user` | `20` | Máximo de direcciones por usuario registrado (RF-USR-002-1) |
 
 ---
 
-### Schema `infra`
+### Schema `infra` — 6 tablas
 
-| Tabla | Propósito | Append-only |
-|-------|-----------|-------------|
-| `outbox_events` | Transactional Outbox — garantía at-least-once hacia BullMQ | No (cambia `status`) |
-| `webhook_events` | Almacén de webhooks entrantes de Stripe, ShipEngine, eBay | No (cambia `status`) |
-| `payment_intent_events` | Historial de transiciones del payment_intent | **Sí** |
-| `notification_templates` | Plantillas de email con variables Handlebars | No |
-| `notification_deliveries` | Log de cada intento de envío del EmailWorker | No |
-| `idempotency_keys` | Respaldo durable de Redis para evitar doble orden/cobro | No |
+| Tabla | Propósito | Soft delete | Append-only |
+|-------|-----------|-------------|-------------|
+| `outbox_events` | Transactional Outbox — garantía at-least-once hacia BullMQ | — (cambia `status`) | No |
+| `webhook_events` | Almacén de webhooks entrantes de Stripe, ShipEngine, eBay | — (cambia `status`) | No |
+| `payment_intent_events` | Historial de transiciones del `payment_intent` | — | **Sí** † |
+| `notification_templates` | Plantillas de email con variables Handlebars | `deleted_at` | No |
+| `notification_deliveries` | Log de cada intento de envío del `EmailWorker` | — | No |
+| `idempotency_keys` | Respaldo durable de Redis para evitar doble orden/cobro | — | No |
 
-#### Campos clave — `infra.outbox_events`
+---
 
-| Campo | Descripción |
-|-------|-------------|
-| `aggregate_type` | `order \| payment \| inventory \| listing \| notification` |
-| `aggregate_id` | UUID de la entidad origen — referencia lógica, sin FK constraint |
-| `event_type` | Ej: `order.paid`, `payment.succeeded`, `stock.updated` |
-| `payload` | Todo lo necesario para el handler — no requiere JOIN |
-| Índice de polling | `(status, created_at) WHERE status = 'pending'` |
+#### `infra.outbox_events`
 
-#### Campos clave — `infra.notification_templates`
+Transactional Outbox. Se escribe en la **misma transacción** que el cambio de negocio. Un polling worker lee filas `pending` y las publica a BullMQ. `aggregate_id` es referencia lógica sin FK constraint por diseño — el worker no necesita JOIN, opera sobre el payload.
 
-| `key` requerido | Cuándo se dispara |
-|-----------------|-------------------|
-| `order_confirmed` | Pago exitoso — incluye comprobante y link a la orden |
-| `order_shipped` | Label generada por shipment — se envía 1 email por shipment |
-| `order_delivered` | Entrega confirmada — incluye recordatorio de garantía 30d/1y |
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `aggregate_type` | `varchar(50)` | No | — | Tipo de entidad origen: `order \| payment \| inventory \| listing \| notification` |
+| `aggregate_id` | `uuid` | No | — | ‡ UUID de la entidad origen — sin FK constraint |
+| `event_type` | `varchar(100)` | No | — | Ej: `order.paid`, `payment.succeeded`, `inventory.reserved`, `stock.updated` |
+| `payload` | `jsonb` | No | — | Todo lo necesario para el handler — diseñado para no requerir JOIN |
+| `status` | `enum` | No | `'pending'` | `pending → processing → published / failed` |
+| `published_at` | `timestamptz` | Sí | — | Timestamp de publicación exitosa a BullMQ |
+| `retry_count` | `int` | No | `0` | Reintentos del polling worker |
+| `last_error` | `text` | Sí | — | Último error del worker |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+> Índice crítico para el polling worker: `(status, created_at) WHERE status = 'pending'`
+
+---
+
+#### `infra.webhook_events`
+
+Almacén de webhooks entrantes de Stripe, ShipEngine y eBay. `UNIQUE (provider, provider_event_id)` garantiza idempotencia — si el mismo evento llega dos veces, el segundo INSERT falla y el worker lo descarta silenciosamente.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `provider` | `varchar(50)` | No | — | `stripe \| shipengine \| ebay` |
+| `provider_event_id` | `varchar(255)` | No | — | ID único del evento en el provider. **UNIQUE** con `provider` |
+| `event_type` | `varchar(100)` | No | — | Ej: `payment_intent.succeeded`, `shipment.delivered` |
+| `payload` | `jsonb` | No | — | Payload completo del webhook |
+| `status` | `enum` | No | `'received'` | `received → processing → processed / failed / ignored` |
+| `processed_at` | `timestamptz` | Sí | — | |
+| `error_message` | `text` | Sí | — | Error del último intento de procesamiento |
+| `retry_count` | `int` | No | `0` | |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `infra.payment_intent_events` †
+
+**Ledger append-only** del ciclo de vida de cada `payment_intent`. Traza qué webhook originó cada transición de estado. Nunca se actualiza ni borra.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `payment_intent_id` | `uuid` | No | — | FK → `commerce.payment_intents.id` ON DELETE RESTRICT |
+| `event_type` | `varchar(100)` | No | — | Ej: `payment_intent.succeeded`, `payment_intent.payment_failed` |
+| `status_before` | `varchar(50)` | Sí | — | Estado previo al evento |
+| `status_after` | `varchar(50)` | No | — | Estado resultante tras el evento |
+| `amount` | `numeric(10,2)` | Sí | — | Monto relevante. Ej: monto reembolsado en un refund |
+| `provider_event_id` | `varchar(255)` | Sí | — | ‡ Referencia lógica a `webhook_events.provider_event_id` |
+| `payload` | `jsonb` | Sí | — | Datos adicionales del evento |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `infra.notification_templates`
+
+Plantillas de email gestionadas por el equipo dev/admin. `key` es el identificador que usa `NotificationsModule` para buscar la plantilla al disparar un evento.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `key` | `varchar(100)` | No | — | **UNIQUE** — identificador de la plantilla. Ej: `order_confirmed` |
+| `name` | `varchar(255)` | No | — | Nombre legible |
+| `channel` | `enum` | No | `'email'` | `email \| sms \| push` — en V1 solo `email` |
+| `subject` | `varchar(500)` | Sí | — | Asunto del email (soporta variables Handlebars) |
+| `body_html` | `text` | No | — | Cuerpo HTML del email |
+| `body_text` | `text` | Sí | — | Versión texto plano (fallback) |
+| `variables` | `jsonb` | Sí | — | Schema de variables: `[{ name, description, required, example }]` |
+| `is_active` | `boolean` | No | `true` | |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+| `deleted_at` | `timestamptz` | Sí | — | **Soft delete** |
+
+**Keys requeridas en seed:**
+
+| `key` | Disparador |
+|-------|------------|
+| `order_confirmed` | Pago exitoso — comprobante + link a la orden |
+| `order_shipped` | Label generada — 1 email por shipment (RF-NOT-001) |
+| `order_delivered` | Entrega confirmada — recordatorio de garantía 30d/1y |
 | `email_verification` | Registro de nuevo usuario |
 | `password_reset` | Solicitud de recuperación de contraseña |
 | `stock_conflict_alert` | Sobreventa detectada — notificación interna al equipo |
 
 ---
 
+#### `infra.notification_deliveries`
+
+Log de cada intento de envío del `EmailWorker`. Soporta retry de notificaciones fallidas y auditoría de entregas por orden/usuario. `recipient_user_id = NULL` → guest identificado por `recipient_email`.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `template_key` | `varchar(100)` | Sí | — | ‡ Referencia lógica a `notification_templates.key` |
+| `channel` | `enum` | No | — | `email \| sms \| push` |
+| `recipient_type` | `enum` | No | — | `registered_user \| guest` |
+| `recipient_user_id` | `uuid` | Sí | — | FK → `commerce.users.id` ON DELETE SET NULL · `NULL` = guest |
+| `recipient_email` | `varchar(255)` | Sí | — | Email del destinatario — desnormalizado para guests |
+| `subject` | `varchar(500)` | Sí | — | Asunto final renderizado |
+| `reference_type` | `varchar(50)` | Sí | — | Tipo de entidad asociada: `order`, `user` |
+| `reference_id` | `uuid` | Sí | — | UUID de la entidad asociada |
+| `status` | `enum` | No | `'pending'` | `pending → sending → delivered / failed / bounced` |
+| `provider` | `varchar(50)` | Sí | — | Proveedor SMTP utilizado |
+| `provider_message_id` | `varchar(255)` | Sí | — | ID del mensaje en el proveedor — para rastreo de bounces |
+| `error_message` | `text` | Sí | — | Error del último intento |
+| `retry_count` | `int` | No | `0` | |
+| `sent_at` | `timestamptz` | Sí | — | |
+| `delivered_at` | `timestamptz` | Sí | — | Confirmado por webhook del proveedor |
+| `opened_at` | `timestamptz` | Sí | — | Confirmado por pixel de tracking (si habilitado) |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `infra.idempotency_keys`
+
+Respaldo durable en PostgreSQL de las claves de idempotencia que Redis mantiene en memoria. Si Redis se reinicia, evita doble orden o doble cobro en resubmits del cliente.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `key` | `varchar(255)` | No | — | **UNIQUE** — clave de idempotencia enviada por el cliente |
+| `request_path` | `varchar(255)` | No | — | Endpoint de la request |
+| `request_hash` | `varchar(64)` | No | — | Hash SHA-256 del body normalizado — detecta mismo key con body diferente (posible ataque o bug de cliente) |
+| `response_status` | `int` | Sí | — | HTTP status de la respuesta almacenada |
+| `response_body` | `jsonb` | Sí | — | Respuesta almacenada para devolver en resubmits sin reprocesar |
+| `resource_type` | `varchar(50)` | Sí | — | Tipo del recurso creado: `order \| payment` |
+| `resource_id` | `uuid` | Sí | — | UUID del recurso creado |
+| `expires_at` | `timestamptz` | No | — | TTL de la clave |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
 ## FKs cross-schema
 
-Las siguientes FKs cruzan schemas y se resuelven a nivel de aplicación (NestJS), no como constraints de PostgreSQL:
+Las siguientes relaciones cruzan schemas y se resuelven a nivel de aplicación (NestJS), no como constraints de PostgreSQL:
 
 | Tabla origen | Campo | Referencia lógica |
 |---|---|---|
@@ -1233,4 +1983,4 @@ Las siguientes FKs cruzan schemas y se resuelven a nivel de aplicación (NestJS)
 | `infra.payment_intent_events` | `payment_intent_id` | `commerce.payment_intents.id` ✓ (FK declarada) |
 | `infra.notification_deliveries` | `recipient_user_id` | `commerce.users.id` ✓ (FK declarada) |
 
-> Las marcadas con ✓ sí tienen FK constraint declarada porque son en la misma dirección de dependencia (infra → commerce). Las demás (commerce → catalog) se validan en la capa de servicio de NestJS para evitar dependencias circulares entre schemas.
+> Las marcadas con ✓ tienen FK constraint declarada porque la dependencia va en dirección `infra → commerce`. Las demás (`commerce → catalog`) se validan en la capa de servicio de NestJS para evitar dependencias circulares entre schemas.
