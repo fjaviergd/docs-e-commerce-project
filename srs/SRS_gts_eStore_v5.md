@@ -437,6 +437,117 @@ Un bundle es un listing compuesto por múltiples productos individuales comercia
 
 ---
 
+#### RF-CAT-009 — Sistema de Grading de Listings
+
+| Campo | Valor |
+|---|---|
+| **Módulo** | Catálogo |
+| **Versión** | V1 |
+| **Actores** | Cliente, Administrador |
+| **Precondiciones** | Listing creado en el CRM con condición asignada |
+
+**Descripción:**
+Todo listing publicado en GTS eStore lleva una calificación de condición (grade) que describe de forma estandarizada el estado cosmético, funcional y de saneamiento de datos del equipo. El sistema expone este grade en múltiples puntos de la experiencia de compra — desde la card del listado hasta el detalle de producto — y cuenta con una sección educativa en el home que explica el sistema al comprador. El grading está alineado al estándar de certificación **R2V3** (Responsible Recycling, versión 3), adoptado por GreenTek Solutions.
+
+---
+
+**Niveles de condición (GTS Grade)**
+
+El sistema maneja tres niveles de condición, mostrados en la tienda con etiqueta de texto, color y puntaje numérico de referencia:
+
+| GTS Grade | Puntaje de referencia | Color UI | Descripción resumida |
+|---|---|---|---|
+| **Excellent** | 95 / 100 | Verde (primary) | Apariencia como nueva. Desgaste mínimo o nulo. Todas las funciones al 100%. |
+| **Good** | 75 / 100 | Azul | Desgaste cosmético leve visible solo bajo inspección cercana. Funciones al 100%. |
+| **Fair** | 55 / 100 | Ámbar | Desgaste cosmético visible — rayones, marcas o pequeños golpes. Funciones principales operativas. |
+
+> El puntaje numérico es orientativo y se usa exclusivamente en la UI para comunicar la condición al comprador. No es un campo de entrada del administrador.
+
+---
+
+**Saneamiento de datos (R2V3 — Sanitization)**
+
+Todos los equipos con medios de almacenamiento deben documentar su estado de saneamiento. El prototipo implementa el grado NON-DATA, aplicable a equipos evaluados como no contenedores de datos o que ya fueron saneados.
+
+| Código R2V3 | Etiqueta | Descripción |
+|---|---|---|
+| **NON-DATA** | Sanitized or free of data storage media | El equipo no contiene medios de almacenamiento con datos, o fue saneado mediante destrucción física, software certificado, o fue evaluado como equipo que no contiene datos. |
+
+---
+
+**Condición cosmética (R2V3 — Cosmetic Description)**
+
+Describe el estado visual externo del equipo. El administrador asigna uno de los siguientes grados al crear el listing:
+
+| Código R2V3 | Etiqueta GTS | Descripción |
+|---|---|---|
+| **C1** | Like New | Sin blemishes cosméticos visibles. Apariencia tal como fue fabricado — sin rayones, golpes ni decoloración. Todos los paneles, marcos y cubiertas presentes e intactos. Sin daño funcional en bisagras, cierres ni componentes mecánicos. |
+| **C2** | Lightly Used | Pueden existir rayones o marcas menores visibles bajo luz directa o inspección cercana. Sin golpes, gouges, decoloración ni daño cosmético significativo. Todos los paneles intactos. Sin daño funcional en bisagras, cierres ni teclado. |
+| **C3** | Used Fair | Blemishes cosméticos consistentes con el uso: múltiples golpes, decoloración y rayones de leve a severos. Posible daño en cierres, bisagras o teclado. Algunas partes, marcos o cubiertas pueden estar ausentes. |
+
+---
+
+**Condición funcional (R2V3 — Description of Product Functionality)**
+
+Describe el estado operativo verificado del equipo. El administrador asigna uno de los siguientes grados:
+
+| Código R2V3 | Etiqueta | Descripción |
+|---|---|---|
+| **F1** | All Functions Working | Todas las funciones primarias y secundarias verificadas como operativas mediante pruebas manuales o de software. Todos los Focus Materials (batería, disco duro, teclado) presentes y funcionales. Probado a especificaciones del fabricante. Sin componentes faltantes. Todos los puertos, conectores e interfaces externas probados y confirmados funcionales. |
+| **F2** | Key Functions Working | Funciones primarias verificadas como operativas. Todos los Focus Materials presentes y funcionales. Las funciones secundarias pueden no estar completamente probadas pero se espera que funcionen. Sin componentes faltantes para funciones primarias. |
+| **F3** | Key Functions Working (Appendix C — Test and Repair) | Un subconjunto de las funciones primarias verificadas. El hardware requerido para funciones clave puede haber sido removido tras la prueba (ej. disco duro). Pueden faltar componentes no esenciales para funciones clave. Las funciones secundarias pueden no estar probadas ni funcionar. Todos los componentes faltantes serán listados individualmente. |
+
+---
+
+**Correspondencia entre GTS Grade y códigos R2V3**
+
+| GTS Grade | Cosmética (R2V3) | Funcionalidad (R2V3) | Casos de uso típicos |
+|---|---|---|---|
+| Excellent | C1 | F1 | Equipo reacondicionado premium, casi sin uso |
+| Good | C2 | F1 / F2 | Equipo usado con desgaste cosmético leve, totalmente funcional |
+| Fair | C3 | F2 / F3 | Equipo con desgaste cosmético notable, funciones clave operativas |
+
+> La combinación exacta de códigos R2V3 es asignada por el administrador al crear el listing. El campo `condition` del listing ("Excellent", "Good" o "Fair") es la etiqueta simplificada que ve el cliente en la tienda y en las cards.
+
+---
+
+**Requerimientos funcionales:**
+
+- RF-CAT-009-1: Cada listing debe tener asignado un GTS Grade (`Excellent`, `Good` o `Fair`) — campo obligatorio en el formulario de creación
+- RF-CAT-009-2: El grade del listing debe mostrarse como badge con color en la card del producto (catálogo y secciones del home)
+- RF-CAT-009-3: El detalle de producto debe mostrar el grade con su puntaje de referencia y descripción completa
+- RF-CAT-009-4: El detalle de producto debe incluir una pestaña "Condition Details" con los tres componentes R2V3 del listing (Sanitización, Cosmética, Funcionalidad) y sus ítems verificados
+- RF-CAT-009-5: La tienda debe incluir una sección educativa ("Our Grading System") que explique los tres niveles al comprador, con descripción, puntaje y contenido incluido por nivel
+- RF-CAT-009-6: El sistema debe asociar al listing los códigos R2V3 específicos utilizados en la certificación (sanitization key, cosmetic key, functionality key)
+- RF-CAT-009-7: La condición **no puede ser una variación de listing** — es un atributo fijo del listing (refuerza RN-1 de RF-CAT-001)
+
+**Reglas de negocio:**
+
+- RN-1: El GTS Grade es el campo que ve el cliente; los códigos R2V3 son el respaldo certificado de ese grade
+- RN-2: Una unidad individual puede tener una condición cosmética diferente a otra unidad del mismo listing — sin embargo, el listing expone una única condición representativa; la condición no puede ser variación
+- RN-3: Todo listing con medios de almacenamiento debe tener un grado de sanitización R2V3 asignado antes de publicarse
+- RN-4: El puntaje numérico (95, 75, 55) es exclusivo de la UI informativa y no se almacena como dato operacional del listing
+
+**Puntos de exposición en la UI (prototipo):**
+
+| Componente | Dónde | Qué muestra |
+|---|---|---|
+| `ProductCard` | Grid de listados, Flash Deals, secciones del home | Badge con label y color del grade |
+| `InfoPanel` (detalle) | Página `/product/[slug]` | Badge de grade + dot indicador de condición |
+| `TabsSection` (Condition Details) | Página `/product/[slug]` | Tres secciones R2V3: Sanitización, Cosmética, Funcionalidad — con código, etiqueta e ítems verificados |
+| `GtsConditionSection` | Home (`/gts-home`) | Sección educativa con los tres grades, puntaje, descripción y contenido incluido |
+
+**Dependencias / Integraciones:**
+- La estructura de grados R2V3 debe estar alineada con los campos de certificación exportables hacia eBay al publicar el listing (ver RF-CAT-003)
+- La condición es un filtro disponible en el catálogo de búsqueda (ver RF-BUS)
+
+**Extensiones futuras (fuera de alcance V1):**
+- Score de condición calculado automáticamente a partir de ítems R2V3 chequeados (en lugar de asignación manual del grade)
+- Fotografías de condición por sección (cosmética, funcionalidad) adjuntas al listing
+- Historial de cambios de condición de un equipo a lo largo de su ciclo de vida en el CRM
+
+---
+
 ### RF-INV — Inventario
 
 ---
