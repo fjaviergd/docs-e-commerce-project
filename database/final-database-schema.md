@@ -143,6 +143,8 @@ Solo existe cuando `is_variation = true`. Cada fila = un SKU con precio propio.
 
 Cada fila = un ítem físico del CRM vinculado al listing. `UNIQUE` en `crm_inventory_id` — un ítem CRM solo puede pertenecer a un listing.
 
+El campo `status` permite saber qué ítems están disponibles por bodega en tiempo real, necesario para el checkout multi-bodega (RF-LOG-006-4): `COUNT(*) WHERE listing_id = X AND crm_warehouse_id = Y AND status = 'available'`.
+
 | Columna | Tipo | Notas |
 |---------|------|-------|
 | `id` | uuid | PK |
@@ -153,6 +155,7 @@ Cada fila = un ítem físico del CRM vinculado al listing. `UNIQUE` en `crm_inve
 | `crm_po_line` | varchar | nullable — línea de la PO en el CRM |
 | `crm_iq_id` | varchar | nullable — identificador IQ en el CRM |
 | `crm_warehouse_id` | int | Bodega origen — denormalizado para queries rápidos |
+| `status` | enum | default `available` — `available \| reserved \| sold` — se actualiza en las mismas transacciones que `listing_stock` y `inventory_reservations` |
 
 ---
 
@@ -427,6 +430,7 @@ erDiagram
         varchar     crm_po_line             "nullable"
         varchar     crm_iq_id               "nullable"
         int         crm_warehouse_id        "int — tabla externa"
+        enum        status                  "available|reserved|sold — default available"
     }
 
     listing_stock {
@@ -1059,6 +1063,27 @@ Permite a usuarios invitados acceder a su orden mediante un link seguro enviado 
 
 ---
 
+### `system_config` — Configuración operativa del sistema
+
+Parámetros del sistema configurables desde el panel administrativo del CRM por el super administrador. Permite ajustar límites y comportamientos operativos sin cambios en código ni redeploy. Cada parámetro es una fila independiente (key-value con tipado implícito en `value`).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `key` | varchar | UNIQUE NOT NULL — identificador del parámetro, ej. `max_addresses_per_user` |
+| `value` | varchar | NOT NULL — valor en texto; el backend lo parsea al tipo correcto según el `key` |
+| `description` | text | nullable — descripción legible del parámetro para el panel admin |
+| `updated_by` | int | NOT NULL — FK → users (int — tabla externa CRM) — superadmin que realizó el último cambio |
+| `updated_at` | timestamp | NOT NULL |
+
+**Parámetros iniciales (seed data):**
+
+| `key` | `value` default | Descripción |
+|-------|-----------------|-------------|
+| `max_addresses_per_user` | `20` | Número máximo de direcciones guardadas por usuario registrado (RF-USR-002-1) |
+
+---
+
 ### `faqs` — Preguntas frecuentes
 
 Gestionadas desde el panel administrativo del CRM. El administrador crea, edita, elimina y activa/desactiva individualmente cada pregunta (RF-MKT-001).
@@ -1070,8 +1095,8 @@ Gestionadas desde el panel administrativo del CRM. El administrador crea, edita,
 | `answer` | text | NOT NULL |
 | `is_active` | boolean | default `true` — `false` = conservada pero no visible en tienda |
 | `sort_order` | int | default 0 |
-| `created_by` | uuid | FK → `users.id` — administrador que la creó |
-| `updated_by` | uuid | nullable FK → `users.id` — último administrador que la editó |
+| `created_by` | int | FK → users (int — tabla externa CRM) — administrador que la creó |
+| `updated_by` | int | nullable — FK → users (int — tabla externa CRM) — último administrador que la editó |
 | `created_at` | timestamp | NOT NULL |
 | `updated_at` | timestamp | NOT NULL |
 
@@ -1333,9 +1358,18 @@ erDiagram
         text        answer
         boolean     is_active               "default true"
         int         sort_order              "default 0"
-        uuid        created_by              "FK → users"
-        uuid        updated_by              "nullable FK → users"
+        int         created_by              "int — tabla externa CRM"
+        int         updated_by              "nullable — int — tabla externa CRM"
         timestamp   created_at
+        timestamp   updated_at
+    }
+
+    system_config {
+        uuid        id
+        varchar     key                     "UNIQUE NOT NULL — ej. max_addresses_per_user"
+        varchar     value                   "NOT NULL — valor en texto"
+        text        description             "nullable — legible para el panel admin"
+        int         updated_by              "int — tabla externa CRM — superadmin"
         timestamp   updated_at
     }
 
@@ -1670,6 +1704,7 @@ erDiagram
 - `listing_stock_movements` es un ledger contable — **nunca borrar ni actualizar**; correcciones via `movement_type = ADJUSTMENT`
 - `price_config_history` es append-only — registro inmutable de cambios de descuento (RF-PAG-002)
 - `shipping_restrictions` usa `is_active` para desactivar sin borrar (RF-LOG-002)
+- `listing_inventory_links.status` (`available | reserved | sold`) permite derivar stock disponible por bodega en tiempo real para el checkout multi-bodega (RF-LOG-006-4): `COUNT(*) WHERE listing_id=X AND crm_warehouse_id=Y AND status='available'`. Se actualiza en la misma transacción que `listing_stock` y `inventory_reservations`
 
 ### Módulo Compradores/Órdenes
 - `users` y `orders` están desacoplados — guest checkout sin cuenta
@@ -1684,6 +1719,8 @@ erDiagram
 - `user_notification_preferences.email_security` no puede desactivarse desde la UI — protege tokens críticos
 - `guest_order_access` es obligatorio para acceso a la orden sin cuenta (RF-PCV-001)
 - `auth_tokens` hash — nunca texto plano (RF-USR-006)
+- `faqs.created_by` / `faqs.updated_by` son `int` (admins CRM), igual que el resto de entidades gestionadas por administradores — no referencian la tabla `users` del e-commerce
+- `system_config` es la tabla de configuración operativa gestionable desde el panel admin sin cambios en código; valor inicial `max_addresses_per_user = 20` (RF-USR-002-1)
 
 ### Módulo Infraestructura Async
 - `outbox_events` se escribe en la **misma transacción** que el cambio de negocio — garantía at-least-once hacia BullMQ
