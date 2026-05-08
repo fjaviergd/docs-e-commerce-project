@@ -1,21 +1,27 @@
-# Esquema de BD — Módulo de Listings
+# Esquema de BD — GTS eStore (Schema Final Consolidado)
 
 > Basado en SRS GTS eStore v5.0  
-> Soporta: listing simple · listing con variaciones · eBay · GTS Store · ambos canales · publicación diferida por canal · publicación programada · borradores incompletos · plantillas reutilizables · copia de listings · control de stock con historial completo
+> Combina: Módulo de Listings/Catálogo · Módulo Compradores/Órdenes  
+> Soporta: listing simple · variaciones · eBay · GTS Store · multi-bodega · carrito guest · checkout Stripe · ShipEngine · devoluciones manuales
+
+> **PKs:** `uuid v7` en todas las tablas internas — ordenado por tiempo, sin fragmentación de índice, no enumerable en API.  
+> **FKs externas** (`crm_*`, `ebay_linked_account_id`, `crm_warehouse_id`) mantienen `int` porque referencian tablas de otros sistemas.
 
 ---
 
-## Tablas
+## Módulo 1 — Listings y Catálogo
 
-### `gts_categories` — Catálogo de categorías GTS
+---
 
-Categorías internas planas (sin anidamiento) usadas para agrupar listings en la GTS Store. No se eliminan — se desactivan con `is_active = false` para no romper FKs existentes.
+### `gts_categories` — Categorías internas GTS Store
+
+Categorías planas (sin anidamiento) para agrupar listings en la tienda. No se eliminan — se desactivan para no romper FKs existentes.
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
 | `id` | uuid | PK |
-| `name` | varchar | Nombre de la categoría — ej: `Laptops`, `Desktops`, `Phones` |
-| `is_active` | boolean | `false` = desactivada, no aparece en selectores pero mantiene FKs |
+| `name` | varchar | Ej: `Laptops`, `Desktops`, `Phones` |
+| `is_active` | boolean | `false` = desactivada, mantiene FKs |
 | `sort_order` | int | |
 | `created_at` | timestamp | |
 | `updated_at` | timestamp | |
@@ -29,36 +35,36 @@ Categorías internas planas (sin anidamiento) usadas para agrupar listings en la
 | `id` | uuid | PK |
 | `title` | varchar | nullable — draft puede no tener título aún |
 | `description` | text | nullable |
-| `condition` | enum | nullable — `NEW \| OPEN_BOX \| USED \| REFURBISHED \| PARTS` |
+| `condition` | enum | nullable — `EXCELLENT \| GOOD \| FAIR` (GTS Grade visible al cliente — RF-CAT-009) |
 | `listing_type` | enum | `LISTING \| TEMPLATE` |
 | `status` | enum | `draft \| ready \| scheduled \| published \| partially_published \| out_of_stock \| unpublished \| inactive` |
 | `source_type` | enum | `ORIGINAL \| FROM_TEMPLATE \| FROM_COPY` |
 | `source_id` | uuid | nullable FK → `listings.id` — origen si es copia o desde template |
-| `gts_category_id` | uuid | nullable FK → `gts_categories.id` — categoría para agrupar en GTS Store |
 | `is_variation` | boolean | `false` = single / `true` = con variaciones |
+| `gts_category_id` | uuid | nullable FK → `gts_categories.id` — categoría para agrupar en GTS Store |
+| `currency` | varchar(3) | default `USD` |
+| `important_notes` | jsonb | nullable — array de notas importantes del producto |
+| `included_items` | jsonb | nullable — array de ítems incluidos con el producto |
+| `r2v3_data_sanitization` | enum | nullable — `NON_DATA` (R2V3 sanitización — RF-CAT-009) |
+| `r2v3_cosmetic` | enum | nullable — `C1 \| C2 \| C3` (R2V3 cosmética — RF-CAT-009) |
+| `r2v3_functionality` | enum | nullable — `F1 \| F2 \| F3` (R2V3 funcionalidad — RF-CAT-009) |
 | `shipping_policy` | enum | nullable — `NORMAL \| FREIGHT \| FREE` |
-| `fixed_shipping_cost` | decimal | nullable — obligatorio para política `FREIGHT`; fallback para `NORMAL` si ShipEngine no disponible |
-| `weight_value` | decimal | nullable — obligatorio si `shipping_policy = NORMAL` |
+| `fixed_shipping_cost` | decimal | nullable — obligatorio para publicar (RF-LOG-003) |
+| `weight_value` | decimal | nullable |
 | `weight_unit` | varchar | nullable — `LB \| OZ \| KG` |
 | `dim_length` | decimal | nullable |
 | `dim_width` | decimal | nullable |
 | `dim_height` | decimal | nullable |
 | `dim_unit` | varchar | nullable — `IN \| CM` |
-| `has_r2v3_cert` | boolean | |
-| `r2v3_data_sanitization` | enum | nullable — `N/A \| Non-Data \| ...` |
-| `r2v3_cosmetic` | enum | nullable — `N/A \| C1 \| C2 \| ...` |
-| `r2v3_functionality` | enum | nullable — `N/A \| F1 \| F2 \| ...` |
 | `ebay_category_id` | varchar | nullable |
 | `ebay_category_name` | varchar | nullable |
 | `shared_aspects` | jsonb | nullable — `{ Brand, Model, ... }` |
-| `important_notes` | jsonb | nullable — array de notas importantes del producto |
-| `included_items` | jsonb | nullable — array de ítems incluidos con el producto |
 | `meta_title` | varchar | nullable — SEO: título de la página del producto (RF-MKT-004) |
 | `meta_description` | text | nullable — SEO: descripción para motores de búsqueda (RF-MKT-004) |
 | `slug` | varchar | unique, nullable — URL amigable ej. `cisco-catalyst-switch-3750` (RF-MKT-004) |
 | `units_sold` | int | default 0 — contador de unidades vendidas (RF-BUS-004-1) |
 | `draft_progress` | jsonb | `{ general, category, aspects, variations, images, pricing, shipping, inventory, channels }` |
-| `created_by` | int | FK → users |
+| `created_by` | int | FK → users (int — tabla externa CRM) |
 | `created_at` | timestamp | |
 | `updated_at` | timestamp | |
 
@@ -123,7 +129,7 @@ Solo existe cuando `is_variation = true`. Cada fila = un SKU con precio propio.
 |---------|------|-------|
 | `id` | uuid | PK |
 | `listing_id` | uuid | FK → `listings.id` |
-| `listing_variation_id` | uuid | nullable FK — `null` = imagen del grupo |
+| `listing_variation_id` | uuid | nullable FK → `listing_variations.id` — `null` = imagen del grupo |
 | `original_url` | varchar | URL en servidor privado |
 | `ebay_url` | varchar | nullable — resultado de `createImageFromUrl` |
 | `gts_store_url` | varchar | nullable |
@@ -141,7 +147,7 @@ Cada fila = un ítem físico del CRM vinculado al listing. `UNIQUE` en `crm_inve
 |---------|------|-------|
 | `id` | uuid | PK |
 | `listing_id` | uuid | FK → `listings.id` |
-| `listing_variation_id` | uuid | nullable FK — `null` = single listing |
+| `listing_variation_id` | uuid | nullable FK → `listing_variations.id` — `null` = single listing |
 | `crm_inventory_id` | int | ID principal en la tabla `inventory` del CRM — UNIQUE |
 | `crm_po_id` | varchar | nullable — número de PO en el CRM |
 | `crm_po_line` | varchar | nullable — línea de la PO en el CRM |
@@ -158,7 +164,7 @@ Una fila por listing (simple) o por variación. Es el número que se muestra en 
 |---------|------|-------|
 | `id` | uuid | PK |
 | `listing_id` | uuid | FK → `listings.id` |
-| `listing_variation_id` | uuid | nullable FK — `null` = single listing |
+| `listing_variation_id` | uuid | nullable FK → `listing_variations.id` — `null` = single listing |
 | `quantity_available` | int | Stock disponible en este momento |
 | `updated_at` | timestamp | |
 
@@ -166,13 +172,13 @@ Una fila por listing (simple) o por variación. Es el número que se muestra en 
 
 ### `listing_stock_movements` — Historial de movimientos (ledger)
 
-Cada cambio de stock genera una fila aquí. El stock actual puede verificarse como `SUM(quantity_delta)`. El snapshot en `listing_stock` y el total del ledger siempre deben coincidir — se actualizan en la misma transacción.
+Append-only. Cada cambio de stock genera una fila. `SUM(quantity_delta)` debe coincidir con `listing_stock.quantity_available` — se actualizan en la misma transacción. **Nunca se borra ni actualiza.**
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
 | `id` | uuid | PK |
 | `listing_id` | uuid | FK → `listings.id` |
-| `listing_variation_id` | uuid | nullable FK |
+| `listing_variation_id` | uuid | nullable FK → `listing_variations.id` |
 | `quantity_delta` | int | `+` entra / `−` sale |
 | `quantity_after` | int | Snapshot del stock tras este movimiento |
 | `movement_type` | enum | Ver tabla de tipos abajo |
@@ -208,7 +214,7 @@ Cada cambio de stock genera una fila aquí. El stock actual puede verificarse co
 |---------|------|-------|
 | `id` | uuid | PK |
 | `listing_id` | uuid | FK único → `listings.id` |
-| `ebay_linked_account_id` | int | FK → `gobig_ebay_linked_accounts` |
+| `ebay_linked_account_id` | int | FK → `gobig_ebay_linked_accounts` (int — tabla externa) |
 | `ebay_listing_id` | varchar | nullable — devuelto por `publishOffer` |
 | `ebay_sku` | varchar | nullable — solo single (`is_variation = false`) |
 | `ebay_offer_id` | varchar | nullable — solo single |
@@ -218,6 +224,7 @@ Cada cambio de stock genera una fila aquí. El stock actual puede verificarse co
 | `ebay_payment_policy_id` | varchar | nullable en draft |
 | `ebay_return_policy_id` | varchar | nullable en draft |
 | `ebay_store_category_names` | jsonb | Categorías de la tienda eBay del vendedor |
+| `marketplace_id` | varchar(20) | default `EBAY_US` — ej: `EBAY_US \| EBAY_UK \| EBAY_CA` |
 | `ebay_listing_format` | varchar | `FIXED_PRICE` |
 | `ebay_listing_duration` | varchar | `GTC` |
 | `ebay_listing_description_html` | text | HTML generado |
@@ -226,6 +233,7 @@ Cada cambio de stock genera una fila aquí. El stock actual puede verificarse co
 | `sync_error_message` | text | nullable |
 | `published_at` | timestamp | nullable |
 | `last_synced_at` | timestamp | nullable |
+| `deleted_at` | timestamp | nullable — soft delete; conserva historial de configuración |
 
 ---
 
@@ -249,7 +257,7 @@ Solo existe cuando `is_variation = true`. Cada fila = 1 inventory item + 1 offer
 |---------|------|-------|
 | `id` | uuid | PK |
 | `listing_id` | uuid | FK único → `listings.id` |
-| `gts_store_product_id` | int | nullable — se llena tras crear en GTS Store |
+| `gts_store_product_id` | int | nullable — se llena tras crear en GTS Store (int — tabla externa) |
 | `gts_store_slug` | varchar | nullable |
 | `gts_store_url` | varchar | nullable |
 | `scheduled_at` | timestamp | nullable — fecha programada de publicación |
@@ -257,12 +265,13 @@ Solo existe cuando `is_variation = true`. Cada fila = 1 inventory item + 1 offer
 | `sync_error_message` | text | nullable |
 | `published_at` | timestamp | nullable |
 | `last_synced_at` | timestamp | nullable |
+| `deleted_at` | timestamp | nullable — soft delete; conserva historial de configuración |
 
 ---
 
 ### `price_config` — Config global de precios
 
-Manejada por el superadmin. Los porcentajes se copian como snapshot al listing en el momento de crearlo; cambios futuros no afectan listings existentes.
+Manejada por el superadmin. Los porcentajes se copian como snapshot al listing al crearlo; cambios futuros no afectan listings existentes.
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
@@ -270,14 +279,15 @@ Manejada por el superadmin. Los porcentajes se copian como snapshot al listing e
 | `channel` | varchar | `EBAY \| GTS_STORE` |
 | `ebay_linked_account_id` | int | nullable — `null` = aplica a todos / id = solo esa cuenta eBay |
 | `discount_pct` | decimal | |
-| `updated_by` | int | FK → users |
+| `updated_by` | int | FK → users (int — tabla externa) |
 | `updated_at` | timestamp | |
+| `deleted_at` | timestamp | nullable |
 
 ---
 
-### `price_config_history` — Historial de cambios de configuración de precios 
+### `price_config_history` — Historial de cambios de configuración de precios
 
-Registro de auditoría de cada modificación al descuento global por canal. Requerido por RF-PAG-002 (el panel debe mostrar historial de cambios) y RF-ADM-001.
+Append-only. Registro de auditoría de cada modificación al descuento global por canal. Requerido por RF-PAG-002 (el panel debe mostrar historial de cambios).
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
@@ -286,30 +296,30 @@ Registro de auditoría de cada modificación al descuento global por canal. Requ
 | `ebay_linked_account_id` | int | nullable — misma semántica que `price_config` |
 | `discount_pct_previous` | decimal | Valor anterior al cambio |
 | `discount_pct_new` | decimal | Valor nuevo establecido |
-| `changed_by` | int | FK → users — superadmin que realizó el cambio |
+| `changed_by` | int | FK → users (int — tabla externa) — superadmin que realizó el cambio |
 | `changed_at` | timestamp | Momento exacto del cambio |
 | `notes` | text | nullable — justificación opcional del cambio |
 
 ---
 
-### `shipping_restrictions` — Lista negra de ubicaciones de envío 
+### `shipping_restrictions` — Lista negra de ubicaciones de envío
 
-Configuración de ubicaciones a las que el sistema bloquea el envío. Gestionada desde el panel administrativo del CRM. Requerido por RF-LOG-002.
+Configuración de ubicaciones bloqueadas para envío. Gestionada desde el panel administrativo del CRM. Requerido por RF-LOG-002.
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
 | `id` | uuid | PK |
-| `restriction_type` | enum | `STATE \| ZIP_CODE \| COUNTRY \| MILITARY` — tipo de restricción |
+| `restriction_type` | enum | `STATE \| ZIP_CODE \| COUNTRY \| MILITARY` |
 | `value` | varchar | Valor a bloquear — ej. `HI`, `PR`, `APO`, `FPO` |
 | `label` | varchar | Descripción legible — ej. `Hawaii`, `Puerto Rico` |
-| `is_active` | boolean | default `true` — permite desactivar sin borrar el registro |
-| `created_by` | int | FK → users |
+| `is_active` | boolean | default `true` — permite desactivar sin borrar |
+| `created_by` | int | FK → users (int — tabla externa) |
 | `created_at` | timestamp | |
 | `updated_at` | timestamp | |
 
 ---
 
-## ERD completo
+## ERD — Módulo Listings
 
 ```mermaid
 erDiagram
@@ -327,12 +337,18 @@ erDiagram
         uuid        id
         varchar     title                   "nullable"
         text        description             "nullable"
-        enum        condition               "nullable — NEW|OPEN_BOX|USED|REFURBISHED|PARTS"
+        enum        condition               "nullable — EXCELLENT|GOOD|FAIR"
         enum        listing_type            "LISTING|TEMPLATE"
         enum        status                  "draft|ready|scheduled|published|partially_published|out_of_stock|unpublished|inactive"
         enum        source_type             "ORIGINAL|FROM_TEMPLATE|FROM_COPY"
         uuid        source_id               "nullable FK → listings.id"
         uuid        gts_category_id         "nullable FK → gts_categories.id"
+        varchar     currency                "default USD"
+        jsonb       important_notes         "nullable"
+        jsonb       included_items          "nullable"
+        enum        r2v3_data_sanitization  "nullable — NON_DATA"
+        enum        r2v3_cosmetic           "nullable — C1|C2|C3"
+        enum        r2v3_functionality      "nullable — F1|F2|F3"
         boolean     is_variation
         enum        shipping_policy         "nullable — NORMAL|FREIGHT|FREE"
         decimal     fixed_shipping_cost     "nullable"
@@ -342,21 +358,15 @@ erDiagram
         decimal     dim_width               "nullable"
         decimal     dim_height              "nullable"
         varchar     dim_unit                "nullable — IN|CM"
-        boolean     has_r2v3_cert
-        enum        r2v3_data_sanitization  "nullable — N/A|Non-Data|..."
-        enum        r2v3_cosmetic           "nullable — N/A|C1|C2|..."
-        enum        r2v3_functionality      "nullable — N/A|F1|F2|..."
         varchar     ebay_category_id        "nullable"
         varchar     ebay_category_name      "nullable"
         jsonb       shared_aspects          "nullable"
-        jsonb       important_notes         "nullable"
-        jsonb       included_items          "nullable"
-        varchar     meta_title              "nullable — SEO"
-        text        meta_description        "nullable — SEO"
+        varchar     meta_title              "nullable — SEO (RF-MKT-004)"
+        text        meta_description        "nullable — SEO (RF-MKT-004)"
         varchar     slug                    "unique, nullable — URL amigable"
-        int         units_sold              "default 0"
-        jsonb       draft_progress          "{ general, category, aspects, variations, images, pricing, shipping, inventory, channels }"
-        int         created_by
+        int         units_sold              "default 0 (RF-BUS-004-1)"
+        jsonb       draft_progress
+        int         created_by              "int — tabla externa"
         timestamp   created_at
         timestamp   updated_at
     }
@@ -412,11 +422,11 @@ erDiagram
         uuid        id
         uuid        listing_id
         uuid        listing_variation_id    "nullable"
-        int         crm_inventory_id        "UNIQUE — ID principal del CRM"
+        int         crm_inventory_id        "UNIQUE — int — tabla externa"
         varchar     crm_po_id               "nullable"
         varchar     crm_po_line             "nullable"
         varchar     crm_iq_id               "nullable"
-        int         crm_warehouse_id
+        int         crm_warehouse_id        "int — tabla externa"
     }
 
     listing_stock {
@@ -433,18 +443,18 @@ erDiagram
         uuid        listing_variation_id    "nullable"
         int         quantity_delta          "+ entra / - sale"
         int         quantity_after
-        enum        movement_type           "INITIAL|SALE_EBAY|SALE_GTS_STORE|RETURN_EBAY|RETURN_GTS_STORE|CANCELLED_SALE|MANUAL_ADD|MANUAL_REMOVE|ADJUSTMENT|SYNC_EBAY|SYNC_GTS_STORE|LISTING_DEACTIVATED|LISTING_REACTIVATED"
+        enum        movement_type
         enum        channel                 "nullable — EBAY|GTS_STORE|MANUAL|SYSTEM"
-        varchar     reference_id            "nullable — order ID, etc."
+        varchar     reference_id            "nullable"
         text        notes                   "nullable"
-        int         created_by              "nullable — null = sistema"
+        int         created_by              "nullable — int — tabla externa"
         timestamp   created_at
     }
 
     listing_channel_ebay {
         uuid        id
         uuid        listing_id              "FK único"
-        int         ebay_linked_account_id
+        int         ebay_linked_account_id  "int — tabla externa"
         varchar     ebay_listing_id         "nullable"
         varchar     ebay_sku                "nullable — single"
         varchar     ebay_offer_id           "nullable — single"
@@ -454,20 +464,22 @@ erDiagram
         varchar     ebay_payment_policy_id  "nullable"
         varchar     ebay_return_policy_id   "nullable"
         jsonb       ebay_store_category_names
+        varchar     marketplace_id          "default EBAY_US"
         varchar     ebay_listing_format
         varchar     ebay_listing_duration
         text        ebay_listing_description_html
-        timestamp   scheduled_at            "nullable — publicación programada"
-        enum        sync_status             "not_requested|scheduled|pending|success|failed"
+        timestamp   scheduled_at            "nullable"
+        enum        sync_status
         text        sync_error_message      "nullable"
         timestamp   published_at            "nullable"
         timestamp   last_synced_at          "nullable"
+        timestamp   deleted_at              "nullable"
     }
 
     listing_channel_ebay_variations {
         uuid        id
         uuid        listing_channel_ebay_id
-        int         listing_variation_id
+        uuid        listing_variation_id
         varchar     ebay_sku
         varchar     ebay_offer_id
     }
@@ -475,23 +487,25 @@ erDiagram
     listing_channel_gts_store {
         uuid        id
         uuid        listing_id              "FK único"
-        int         gts_store_product_id    "nullable"
+        int         gts_store_product_id    "nullable — int — tabla externa"
         varchar     gts_store_slug          "nullable"
         varchar     gts_store_url           "nullable"
-        timestamp   scheduled_at            "nullable — publicación programada"
-        enum        sync_status             "not_requested|scheduled|pending|success|failed"
+        timestamp   scheduled_at            "nullable"
+        enum        sync_status
         text        sync_error_message      "nullable"
         timestamp   published_at            "nullable"
         timestamp   last_synced_at          "nullable"
+        timestamp   deleted_at              "nullable"
     }
 
     price_config {
         uuid        id
         varchar     channel                 "EBAY|GTS_STORE"
-        int         ebay_linked_account_id  "nullable — null=global / id=cuenta específica"
+        int         ebay_linked_account_id  "nullable — int — tabla externa"
         decimal     discount_pct
-        int         updated_by
+        int         updated_by              "int — tabla externa"
         timestamp   updated_at
+        timestamp   deleted_at              "nullable"
     }
 
     price_config_history {
@@ -500,7 +514,7 @@ erDiagram
         int         ebay_linked_account_id  "nullable"
         decimal     discount_pct_previous
         decimal     discount_pct_new
-        int         changed_by              "FK → users"
+        int         changed_by              "int — tabla externa"
         timestamp   changed_at
         text        notes                   "nullable"
     }
@@ -508,10 +522,10 @@ erDiagram
     shipping_restrictions {
         uuid        id
         enum        restriction_type        "STATE|ZIP_CODE|COUNTRY|MILITARY"
-        varchar     value                   "ej. HI, PR, APO"
-        varchar     label                   "ej. Hawaii, Puerto Rico"
+        varchar     value
+        varchar     label
         boolean     is_active               "default true"
-        int         created_by              "FK → users"
+        int         created_by              "int — tabla externa"
         timestamp   created_at
         timestamp   updated_at
     }
@@ -542,7 +556,7 @@ erDiagram
 
 ---
 
-## Máquina de estados
+## Máquina de estados — Listings
 
 ```
 LISTING:
@@ -564,9 +578,9 @@ TEMPLATE:
 
 ---
 
-## Validaciones por capa
+## Validaciones por capa — Listings
 
-### Al guardar (status = `draft`)
+### Al guardar (`status = draft`)
 - Ningún campo es obligatorio salvo `listing_type` y `created_by`
 
 ### Al marcar como `ready` o publicar
@@ -574,17 +588,14 @@ TEMPLATE:
 - Al menos 1 imagen
 - Al menos 1 inventario vinculado *(solo LISTING, no TEMPLATE)*
 - Al menos 1 canal seleccionado *(solo LISTING, no TEMPLATE)*
-- Si `shipping_policy = NORMAL` → `weight_value` NOT NULL
+- `weight_value`, `weight_unit`, `dim_length`, `dim_width`, `dim_height`, `dim_unit` — NOT NULL
 - Si `is_variation = true` → al menos 2 variaciones con SKU y precio
 - Si canal eBay → `ebay_category_id`, `ebay_merchant_location_key` y las 3 policies NOT NULL
 
-### Al programar (asignar `scheduled_at`)
+### Al programar (`scheduled_at`)
 - `status` debe ser `ready`
 - `scheduled_at` debe ser fecha futura
 - `listing_type` debe ser `LISTING`
-
-### Al intentar publicar un TEMPLATE
-- Error: *"Las plantillas no se pueden publicar. Crea un listing desde esta plantilla."*
 
 ### Stock
 - `quantity_after` nunca puede ser negativo
@@ -603,9 +614,7 @@ listings (1 fila)
 ├── listing_images (N filas — listing_variation_id = null)
 ├── listing_inventory_links (N filas — listing_variation_id = null)
 ├── listing_stock (1 fila — listing_variation_id = null)
-├── listing_channel_ebay (1 fila)
-│   ├── ebay_sku
-│   └── ebay_offer_id
+├── listing_channel_ebay (1 fila) [ebay_sku, ebay_offer_id]
 └── listing_channel_gts_store (1 fila)
 ```
 
@@ -621,8 +630,7 @@ listings (1 fila — el grupo)
 │   ├── listing_inventory_links (N filas)
 │   └── listing_stock (1 fila por variación)
 ├── listing_images (N filas de grupo — listing_variation_id = null)
-├── listing_channel_ebay (1 fila)
-│   ├── ebay_inventory_group_key
+├── listing_channel_ebay (1 fila) [ebay_inventory_group_key]
 │   └── listing_channel_ebay_variations (N filas — ebay_sku + ebay_offer_id por variación)
 └── listing_channel_gts_store (1 fila)
 ```
@@ -636,14 +644,14 @@ listings (1 fila)
 ├── listing_variation_axes (opcional)
 ├── listing_variations (opcional — estructura, sin inventario)
 ├── listing_images (opcional)
-├── listing_pricing (opcional)
+└── listing_pricing (opcional)
 ```
 
 No tiene: `listing_inventory_links`, `listing_stock`, `listing_stock_movements`, `listing_channel_ebay`, `listing_channel_gts_store`
 
 ---
 
-## Flujo de publicación eBay (referencia cruzada con `00-listing-creation-flow.md`)
+## Flujo de publicación eBay
 
 ### Single listing
 ```
@@ -659,8 +667,6 @@ No tiene: `listing_inventory_links`, `listing_stock`, `listing_stock_movements`,
 3. N × POST /sell/inventory/v1/offer
 4. POST /sell/inventory/v1/offer/publish_by_inventory_item_group
 ```
-
-El worker de publicación programada llama al mismo `EbayOrchestratorService` — no hay lógica duplicada.
 
 ---
 
@@ -679,307 +685,1011 @@ El worker de publicación programada llama al mismo `EbayOrchestratorService` �
 | `listing_channel_ebay.ebay_inventory_group_key` | Sell Inventory API | `PUT /sell/inventory/v1/inventory_item_group/{key}` |
 | `listing_channel_ebay_variations.ebay_offer_id` | Sell Inventory API | `POST /sell/inventory/v1/offer` |
 | `listing_channel_ebay.ebay_listing_id` | Sell Inventory API | `POST /sell/inventory/v1/offer/{id}/publish` |
-| `listing_stock.quantity_available` | Sell Inventory API | Campo `availableQuantity` en el payload de inventory item |
+| `listing_stock.quantity_available` | Sell Inventory API | Campo `availableQuantity` en payload de inventory item |
 
 ---
 
-# Esquema de BD — Módulo Compradores (Registered + Guest)
+---
 
-> Basado en SRS GTS eStore v5.0  
-> Soporta usuarios registrados e invitados, carrito invitado, carrito, órdenes, direcciones, shipments, pagos, devoluciones e historial de estados.
+## Módulo 2 — Compradores y Órdenes
 
-## Consideraciones de diseño
+> Soporta usuarios registrados e invitados, carrito, órdenes, envíos multi-bodega, pagos Stripe, reservas de inventario, Saga orchestration, devoluciones e historial de estados.
+
+### Consideraciones de diseño
 
 1. Los usuarios invitados (guest) **no generan cuenta**, pero sí generan datos transaccionales (carrito, órdenes).
-2. Las órdenes almacenan un **snapshot del cliente**, por lo que no dependen completamente de `users`.
-3. El carrito funciona para:
-   * usuarios autenticados (`user_id`)
-   * invitados (`user_id = NULL` + UUID en cookie)
-4. El acceso de invitados a órdenes se resuelve mediante tokens seguros.
-5. Una orden puede generar múltiples shipments (uno por bodega involucrada — operación multi-bodega).
+2. Las órdenes almacenan un **snapshot del cliente** para integridad histórica contable.
+3. El carrito funciona para: usuarios autenticados (`user_id`) e invitados (`user_id = NULL` + UUID en cookie).
+4. El acceso de invitados a órdenes se resuelve mediante tokens seguros (`guest_order_access`).
+5. Una orden puede generar múltiples shipments (uno por bodega involucrada — operación multi-bodega, RF-LOG-006).
+6. El flujo de checkout sigue el patrón **Saga**: reserva de inventario → pago → confirmación. Cada paso tiene compensación en caso de fallo.
+7. `order_payments` fue reemplazado por `payment_intents` — diseño provider-agnostic con retry tracking, idempotency key y audit trail completo vía `payment_intent_events`.
 
 ---
 
-# 1. Tabla: `users`
+### `users` — Usuarios registrados
 
-### Descripción
+Almacena únicamente clientes registrados del e-commerce. Los administradores del CRM son gestionados por el CRM.
 
-Almacena únicamente usuarios registrados. No incluye invitados.
-
-```sql
-users (
-  id UUID PRIMARY KEY, -- Identificador único del usuario
-
-  first_name VARCHAR(100) NOT NULL, -- Nombre del usuario
-  last_name VARCHAR(100) NOT NULL, -- Apellido del usuario
-
-  email VARCHAR(255) UNIQUE NOT NULL, -- Email único usado para login
-  password_hash TEXT NOT NULL, -- Hash seguro de la contraseña
-
-  phone VARCHAR(30), -- Teléfono opcional del usuario
-
-  email_verified BOOLEAN DEFAULT FALSE, -- Indica si el email fue verificado
-  email_verified_at TIMESTAMP NULL, -- Fecha de verificación de email
-
-  status VARCHAR(20) DEFAULT 'active', -- Estado de la cuenta (active, blocked)
-
-  created_at TIMESTAMP NOT NULL, -- Fecha de creación
-  updated_at TIMESTAMP NOT NULL, -- Última actualización
-  deleted_at TIMESTAMP NULL -- Soft delete
-);
-```
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `first_name` | varchar(100) | NOT NULL |
+| `last_name` | varchar(100) | NOT NULL |
+| `email` | varchar(255) | UNIQUE NOT NULL — usado para login |
+| `password_hash` | text | NOT NULL — hash seguro |
+| `phone` | varchar(30) | nullable |
+| `email_verified` | boolean | default `false` |
+| `email_verified_at` | timestamp | nullable |
+| `status` | varchar(20) | default `active` — `active \| blocked` |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+| `deleted_at` | timestamp | nullable — soft delete |
 
 ---
 
-# 2. Tabla: `user_crm_links`
+### `user_crm_links` — Vínculo opcional con cuenta CRM
 
-### Descripción
+Permite vincular opcionalmente un cliente del e-commerce con un cliente en el CRM de GreenTek (RF-USR-006).
 
-Permite vincular opcionalmente un usuario del e-commerce con un cliente en el CRM.
-
-```sql
-user_crm_links (
-  id UUID PRIMARY KEY, -- Identificador del vínculo
-
-  user_id UUID REFERENCES users(id), -- Usuario del e-commerce
-
-  crm_email VARCHAR(255) NOT NULL, -- Email registrado en el CRM
-  crm_reference_id VARCHAR(100), -- ID del cliente en el CRM
-
-  linked_at TIMESTAMP NOT NULL -- Fecha de vinculación
-);
-```
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `user_id` | uuid | FK → `users.id` |
+| `crm_email` | varchar(255) | NOT NULL — email registrado en el CRM |
+| `crm_reference_id` | varchar(100) | nullable — ID del cliente en el CRM |
+| `linked_at` | timestamp | NOT NULL |
 
 ---
 
-# 3. Tabla: `user_addresses`
+### `user_addresses` — Direcciones guardadas
 
-### Descripción
+Direcciones de usuarios registrados. No aplica para invitados (RF-USR-002).
 
-Direcciones guardadas por usuarios registrados. No aplica para invitados.
-
-```sql
-user_addresses (
-  id UUID PRIMARY KEY, -- Identificador de la dirección
-
-  user_id UUID REFERENCES users(id), -- Usuario propietario
-
-  recipient_name VARCHAR(255) NOT NULL, -- Nombre del destinatario
-  phone VARCHAR(30), -- Teléfono de contacto
-
-  address_line1 VARCHAR(255) NOT NULL, -- Calle y número
-  address_line2 VARCHAR(255), -- Información adicional
-
-  city VARCHAR(100) NOT NULL, -- Ciudad
-  state VARCHAR(100) NOT NULL, -- Estado
-  postal_code VARCHAR(20) NOT NULL, -- Código postal
-  country VARCHAR(100) NOT NULL, -- País
-
-  is_default BOOLEAN DEFAULT FALSE, -- Indica si es dirección predeterminada
-
-  created_at TIMESTAMP, -- Fecha de creación
-  updated_at TIMESTAMP -- Última actualización
-);
-```
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `user_id` | uuid | FK → `users.id` |
+| `recipient_name` | varchar(255) | NOT NULL |
+| `phone` | varchar(30) | nullable |
+| `address_line1` | varchar(255) | NOT NULL |
+| `address_line2` | varchar(255) | nullable |
+| `city` | varchar(100) | NOT NULL |
+| `state` | varchar(100) | NOT NULL |
+| `postal_code` | varchar(20) | NOT NULL |
+| `country` | varchar(100) | NOT NULL |
+| `is_default` | boolean | default `false` |
+| `created_at` | timestamp | |
+| `updated_at` | timestamp | |
 
 ---
 
-# 4. Tabla: `carts`
+### `carts` — Carrito de compras
 
-### Descripción
+Carrito para usuarios registrados y guest (RF-CAR-001).
 
-Carrito de compras para usuarios registrados y guest.
-
-```sql
-carts (
-  id UUID PRIMARY KEY, -- Identificador del carrito (usado como cartId en cookie)
-
-  user_id UUID NULL REFERENCES users(id), -- Usuario dueño (NULL si es guest)
-
-  status VARCHAR(20) DEFAULT 'active', -- Estado del carrito (active, merged, expired)
-
-  expires_at TIMESTAMP NOT NULL, -- Fecha de expiración (7 días para guest)
-
-  created_at TIMESTAMP NOT NULL, -- Fecha de creación
-  updated_at TIMESTAMP NOT NULL -- Última actualización
-);
-```
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK — usado como `cartId` en cookie |
+| `user_id` | uuid | nullable FK → `users.id` — NULL si es guest |
+| `status` | varchar(20) | default `active` — `active \| merged \| expired` |
+| `expires_at` | timestamp | NOT NULL — 7 días para guest, extendido para registrados |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
 
 ---
 
-# 5. Tabla: `cart_items`
+### `cart_items` — Productos en el carrito
 
-### Descripción
-
-Productos dentro del carrito.
-
-```sql
-cart_items (
-  id UUID PRIMARY KEY, -- Identificador del item
-
-  cart_id UUID REFERENCES carts(id), -- Carrito al que pertenece
-
-  listing_id UUID NOT NULL, -- ID del producto (listing)
-  variation_id UUID NULL, -- ID de variación si aplica
-
-  quantity INT NOT NULL, -- Cantidad seleccionada
-
-  price_snapshot DECIMAL(10,2) NOT NULL, -- Precio al momento de agregar (informativo)
-
-  created_at TIMESTAMP -- Fecha de creación
-);
-```
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `cart_id` | uuid | FK → `carts.id` |
+| `listing_id` | uuid | FK → `listings.id` |
+| `listing_variation_id` | uuid | nullable FK → `listing_variations.id` |
+| `quantity` | int | NOT NULL |
+| `price_snapshot` | decimal(10,2) | NOT NULL — precio al momento de agregar (informativo; precio final se recalcula al pagar) |
+| `created_at` | timestamp | |
 
 ---
 
-# 6. Tabla: `auth_tokens`
+### `auth_tokens` — Tokens de verificación y recuperación
 
-### Descripción
+Gestión de tokens para verificación de email y recuperación de contraseña (RF-USR-006).
 
-Gestión de tokens para verificación de email y recuperación de contraseña.
-
-```sql
-auth_tokens (
-  id UUID PRIMARY KEY, -- Identificador del token
-
-  user_id UUID REFERENCES users(id), -- Usuario asociado
-
-  type VARCHAR(50), -- Tipo (verify_email, reset_password)
-
-  token_hash TEXT NOT NULL, -- Hash del token (no se guarda en texto plano)
-
-  expires_at TIMESTAMP NOT NULL, -- Fecha de expiración
-  used_at TIMESTAMP NULL, -- Fecha en que se utilizó
-
-  created_at TIMESTAMP -- Fecha de creación
-);
-```
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `user_id` | uuid | FK → `users.id` |
+| `type` | varchar(50) | `verify_email \| reset_password` |
+| `token_hash` | text | NOT NULL — hash del token (nunca en texto plano) |
+| `expires_at` | timestamp | NOT NULL |
+| `used_at` | timestamp | nullable |
+| `created_at` | timestamp | |
 
 ---
 
-c
+### `orders` — Órdenes de compra
+
+Representa la orden de compra. Funciona para usuarios registrados y guest. Almacena snapshot completo del cliente y montos históricos para integridad contable (RF-ORD-001).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK — identificador interno, nunca visible al cliente |
+| `visible_order_id` | varchar | nullable — formato `GTS-YYYY-{so_id}` ej. `GTS-2026-15432`. Se genera solo tras recibir `so_id` del CRM |
+| `so_id` | varchar | nullable — identificador de orden en CRM (`so_info.id`). Llena `visible_order_id` al recibirlo |
+| `user_id` | uuid | nullable FK → `users.id` — NULL si es guest |
+| `customer_first_name` | varchar(100) | NOT NULL — snapshot al checkout |
+| `customer_last_name` | varchar(100) | NOT NULL — snapshot al checkout |
+| `customer_email` | varchar(255) | NOT NULL — snapshot al checkout |
+| `customer_phone` | varchar(30) | nullable |
+| `customer_type` | enum | NOT NULL — `guest \| registered` |
+| `status` | enum | NOT NULL — `pending \| paid \| processing \| shipped \| delivered \| completed \| cancelled \| partially_returned \| fully_returned` |
+| `currency` | varchar(10) | default `USD` |
+| `subtotal` | decimal(10,2) | NOT NULL — suma de productos |
+| `shipping_cost` | decimal(10,2) | NOT NULL — suma de costos de todos los shipments |
+| `tax_amount` | decimal(10,2) | NOT NULL — impuesto calculado (RF-PAG-003) |
+| `total` | decimal(10,2) | NOT NULL — total final |
+| `label_generated` | boolean | default `false` — `true` cuando cualquier shipment genera label; bloquea cancelación (RF-ORD-001 RN-4) |
+| `label_generated_at` | timestamp | nullable — momento en que se generó la primera label |
+| `has_stock_conflict` | boolean | default `false` — flag de conflicto de sobreventa (RF-INV-002) |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
 
 ---
 
-# 14. Tabla: `order_return_metadata` 
+### `order_addresses` — Snapshot de direcciones de la orden
 
-### Descripción
+Snapshot de dirección de envío y facturación en el momento del checkout (RF-ORD-001).
 
-Registra la metadata de una devolución cuando el administrador marca la orden como `partially_returned` o `fully_returned`. Requerido por RF-PCV-002-5. El proceso de devolución en V1 es manual (email/teléfono).
-
-```sql
-order_return_metadata (
-  id UUID PRIMARY KEY, -- Identificador
-
-  order_id UUID REFERENCES orders(id), -- Orden devuelta
-
-  return_type VARCHAR(20) NOT NULL, -- partial | full
-
-  return_reason TEXT, -- Motivo de la devolución capturado por el administrador
-
-  returned_items JSONB, -- Array de ítems devueltos: [{ order_item_id, quantity, notes }]
-
-  refund_amount DECIMAL(10,2), -- Monto reembolsado (procesado manualmente por GreenTek)
-  refund_method VARCHAR(100), -- Medio de reembolso: transfer | check | other
-
-  received_at TIMESTAMP, -- Fecha en que GreenTek recibió físicamente los productos devueltos
-
-  processed_by UUID REFERENCES users(id), -- Administrador que registró la devolución
-
-  created_at TIMESTAMP NOT NULL,
-  updated_at TIMESTAMP NOT NULL
-);
-```
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `order_id` | uuid | FK → `orders.id` |
+| `type` | varchar(20) | `shipping \| billing` |
+| `recipient_name` | varchar(255) | |
+| `phone` | varchar(30) | nullable |
+| `address_line1` | varchar(255) | |
+| `address_line2` | varchar(255) | nullable |
+| `city` | varchar(100) | |
+| `state` | varchar(100) | |
+| `postal_code` | varchar(20) | |
+| `country` | varchar(100) | |
 
 ---
 
-# 15. Tabla: `faqs` 
+### `order_items` — Productos comprados (snapshot)
 
-### Descripción
+Líneas de la orden. Almacena snapshot completo del producto al momento de la compra para integridad histórica (RF-ORD-001).
 
-Preguntas frecuentes gestionadas desde el panel administrativo (CRM). El administrador puede crear, editar, eliminar y activar/desactivar individualmente cada pregunta. Requerido por RF-MKT-001 y RF-ADM-001.
-
-```sql
-faqs (
-  id UUID PRIMARY KEY, -- Identificador de la pregunta
-
-  question TEXT NOT NULL, -- Texto de la pregunta
-
-  answer TEXT NOT NULL, -- Texto de la respuesta
-
-  is_active BOOLEAN DEFAULT TRUE, -- Si FALSE: se conserva en el sistema pero no se muestra en la tienda
-
-  sort_order INT DEFAULT 0, -- Orden de aparición en la tienda
-
-  created_by UUID REFERENCES users(id), -- Administrador que la creó
-  updated_by UUID NULL REFERENCES users(id), -- Último administrador que la editó
-
-  created_at TIMESTAMP NOT NULL,
-  updated_at TIMESTAMP NOT NULL
-);
-```
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `order_id` | uuid | FK → `orders.id` |
+| `listing_id` | uuid | FK → `listings.id` — referencia al listing original |
+| `listing_variation_id` | uuid | nullable FK → `listing_variations.id` |
+| `product_name` | varchar(255) | NOT NULL — snapshot del nombre al comprar |
+| `product_sku` | varchar | nullable — snapshot del SKU |
+| `product_condition` | varchar(50) | nullable — snapshot de la condición (EXCELLENT/GOOD/FAIR) |
+| `quantity` | int | NOT NULL |
+| `unit_price` | decimal(10,2) | NOT NULL — precio unitario histórico (store_price al momento de compra) |
+| `subtotal` | decimal(10,2) | NOT NULL — `unit_price × quantity` |
+| `crm_warehouse_id` | int | int — bodega de origen del ítem al checkout |
 
 ---
 
-# 16. Tabla: `guest_order_access`
+### `order_shipments` — Shipments por bodega
 
-### Descripción
+Cada fila es un envío independiente. Una orden puede tener N shipments (uno por bodega involucrada). Cada shipment se cotiza con ShipEngine de forma independiente (RF-LOG-006, RF-LOG-007).
 
-Permite a usuarios invitados acceder a su orden mediante un link seguro.
-
-```sql
-guest_order_access (
-  id UUID PRIMARY KEY, -- Identificador del acceso
-
-  order_id UUID REFERENCES orders(id), -- Orden asociada
-
-  access_token_hash TEXT NOT NULL, -- Hash del token de acceso
-
-  expires_at TIMESTAMP NOT NULL, -- Expiración del acceso
-
-  created_at TIMESTAMP -- Fecha de creación
-);
-```
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `order_id` | uuid | FK → `orders.id` |
+| `crm_warehouse_id` | int | NOT NULL — bodega de origen (int — tabla externa CRM `locations`) |
+| `status` | enum | `pending \| label_generated \| shipped \| delivered \| failed` |
+| `carrier` | varchar | nullable — ej. `UPS`, `FedEx`, `USPS` |
+| `service` | varchar | nullable — ej. `UPS Ground`, `FedEx 2Day` |
+| `shipping_cost` | decimal(10,2) | NOT NULL — costo de envío de este shipment |
+| `insurance_selected` | boolean | default `false` — seguro de envío opcional (RF-LOG-007) |
+| `insurance_cost` | decimal(10,2) | nullable — costo del seguro si fue seleccionado |
+| `tracking_number` | varchar | nullable |
+| `tracking_url` | varchar | nullable — enlace al sitio del carrier |
+| `label_url` | varchar | nullable — URL de la label generada |
+| `shipengine_shipment_id` | varchar | nullable — ID en ShipEngine |
+| `label_generated_at` | timestamp | nullable — momento de generación de label; activa `orders.label_generated = true` |
+| `shipped_at` | timestamp | nullable — webhook ShipEngine: carrier escaneó el paquete |
+| `delivered_at` | timestamp | nullable — webhook ShipEngine: entregado |
+| `created_at` | timestamp | |
+| `updated_at` | timestamp | |
 
 ---
 
-# Diagrama de relaciones principales (ERD)
+### `order_shipment_items` — Ítems por shipment
+
+Tabla puente entre `order_items` y `order_shipments`. Necesaria para emails por shipment y detalle del comprobante por bodega (RF-NOT-001, RF-ORD-002).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `order_shipment_id` | uuid | FK → `order_shipments.id` |
+| `order_item_id` | uuid | FK → `order_items.id` |
+| `quantity` | int | NOT NULL — cantidad de este ítem en este shipment |
+
+---
+
+### `payment_intents` — Intents de pago (reemplaza `order_payments`)
+
+Tabla central del ciclo de vida del pago. Diseño provider-agnostic: soporta Stripe en V1 y futuros proveedores sin cambios estructurales. Incluye tracking de reintentos automáticos del `PaymentWorker` e `idempotency_key` para evitar doble cobro en resubmits (RF-PAG-001, RF-CHK-002).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `order_id` | uuid | FK → `orders.id` NOT NULL |
+| `idempotency_key` | varchar | UNIQUE NOT NULL — generado por el backend para reintentos seguros; garantiza que dos requests idénticos no creen dos cobros |
+| `provider` | varchar(50) | NOT NULL default `stripe` — extensible: `paypal`, `braintree` |
+| `provider_payment_intent_id` | varchar | UNIQUE NOT NULL — ID del PaymentIntent en el provider (ej. `pi_3OaB...`) |
+| `provider_charge_id` | varchar | nullable — Charge ID del provider tras el cobro exitoso |
+| `amount` | decimal(10,2) | NOT NULL — monto total en unidad monetaria |
+| `currency` | varchar(3) | NOT NULL default `USD` |
+| `status` | enum | NOT NULL — `created \| requires_payment_method \| requires_confirmation \| requires_action \| processing \| succeeded \| failed \| cancelled` |
+| `payment_method_type` | varchar | nullable — `card \| apple_pay \| google_pay` |
+| `card_last4` | varchar(4) | nullable — solo para tarjetas |
+| `card_brand` | varchar | nullable — `Visa \| Mastercard \| Amex \| Discover` |
+| `client_secret` | text | nullable — Stripe `client_secret` para confirmar desde el frontend (nunca se expone en listados) |
+| `failure_code` | varchar | nullable — código de error del provider |
+| `failure_message` | text | nullable — mensaje interno; no se muestra al cliente |
+| `retry_count` | int | NOT NULL default `0` — número de reintentos ejecutados por el `PaymentWorker` |
+| `max_retries` | int | NOT NULL default `3` — máximo de reintentos configurado |
+| `next_retry_at` | timestamp | nullable — cuándo el `PaymentWorker` intentará de nuevo |
+| `refunded_amount` | decimal(10,2) | NOT NULL default `0` — monto total reembolsado acumulado |
+| `metadata` | jsonb | nullable — datos adicionales del provider (ej. `{ "risk_score": 12 }`) |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+| `deleted_at` | timestamp | nullable |
+
+---
+
+### `order_status_history` — Historial de estados de la orden
+
+Append-only. Cada transición de estado genera una fila. Cubre actualizaciones manuales del admin y webhooks de ShipEngine. **Nunca se actualiza ni se borra** (RF-ORD-001).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `order_id` | uuid | FK → `orders.id` |
+| `status` | varchar | Estado nuevo — ej. `paid`, `shipped`, `cancelled` |
+| `changed_by` | uuid | nullable FK → `users.id` — null = sistema o webhook |
+| `source` | enum | `admin \| system \| shipengine_webhook` |
+| `notes` | text | nullable — notas del administrador o mensaje del webhook |
+| `created_at` | timestamp | NOT NULL |
+
+---
+
+### `inventory_reservations` — Reservas temporales de inventario
+
+Registro de ítems de inventario reservados durante el flujo de checkout. El `InventoryReservation Service` del Saga escribe aquí antes de procesar el pago. Si el pago falla, el worker de compensación libera la reserva. Garantiza que no se venda el mismo ítem a dos compradores simultáneos.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `order_id` | uuid | FK → `orders.id` NOT NULL |
+| `listing_id` | uuid | FK → `listings.id` NOT NULL |
+| `listing_variation_id` | uuid | nullable FK → `listing_variations.id` |
+| `crm_inventory_id` | int | NOT NULL — ítem físico específico reservado (int — tabla externa CRM) |
+| `quantity` | int | NOT NULL |
+| `status` | enum | NOT NULL — `pending \| confirmed \| released \| expired` |
+| `expires_at` | timestamp | NOT NULL — auto-release si el checkout no completa (ej. 15 min) |
+| `released_at` | timestamp | nullable — cuándo se liberó la reserva |
+| `release_reason` | varchar | nullable — `payment_failed \| order_cancelled \| expired \| confirmed` |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+
+---
+
+### `saga_instances` — Estado del Saga Orchestrator
+
+Persiste el estado de cada ejecución del Saga de checkout. Permite que el `Saga Orchestrator` recupere la ejecución tras un crash, sepa qué pasos completó y ejecute la compensación correcta sin duplicar acciones.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `saga_type` | varchar | NOT NULL — `checkout \| return` |
+| `order_id` | uuid | FK → `orders.id` NOT NULL |
+| `status` | enum | NOT NULL — `started \| inventory_reserved \| payment_processing \| succeeded \| compensating \| compensated \| failed` |
+| `current_step` | varchar | nullable — paso en ejecución (`inventory_reserve \| payment \| shipping \| notification`) |
+| `steps` | jsonb | NOT NULL — `[{step, status, completed_at, error}]` — log de cada paso |
+| `compensation_steps` | jsonb | nullable — pasos de rollback pendientes si el Saga falla |
+| `failure_reason` | text | nullable — causa del fallo |
+| `started_at` | timestamp | NOT NULL |
+| `completed_at` | timestamp | nullable |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+
+---
+
+### `user_notification_preferences` — Preferencias de notificaciones
+
+Opt-in/out por tipo de notificación para usuarios registrados. El campo `email_security` no puede desactivarse desde la UI (tokens de seguridad, cambios de contraseña).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `user_id` | uuid | UNIQUE FK → `users.id` NOT NULL — una fila por usuario |
+| `email_order_updates` | boolean | NOT NULL default `true` — confirmación de orden, cambios de estado |
+| `email_shipping_updates` | boolean | NOT NULL default `true` — tracking, entrega |
+| `email_marketing` | boolean | NOT NULL default `false` — promociones y newsletters |
+| `email_security` | boolean | NOT NULL default `true` — verificación de email, reset de contraseña. **No desactivable por el usuario** |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+
+---
+
+### `order_return_metadata` — Metadata de devoluciones
+
+Registra la metadata de una devolución cuando el administrador marca la orden como `partially_returned` o `fully_returned`. Proceso manual en V1 (RF-PCV-002).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `order_id` | uuid | FK → `orders.id` |
+| `return_type` | varchar(20) | NOT NULL — `partial \| full` |
+| `return_reason` | text | nullable — motivo capturado por el administrador |
+| `returned_items` | jsonb | nullable — `[{ order_item_id, quantity, notes }]` |
+| `refund_amount` | decimal(10,2) | nullable — monto reembolsado (procesado manualmente) |
+| `refund_method` | varchar(100) | nullable — `transfer \| check \| other` |
+| `received_at` | timestamp | nullable — fecha en que GreenTek recibió físicamente los productos |
+| `processed_by` | uuid | FK → `users.id` — administrador que registró la devolución |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+
+---
+
+### `guest_order_access` — Acceso de invitados a órdenes
+
+Permite a usuarios invitados acceder a su orden mediante un link seguro enviado por email (RF-PCV-001, RF-USR-006).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `order_id` | uuid | FK → `orders.id` |
+| `access_token_hash` | text | NOT NULL — hash del token de acceso (nunca en texto plano) |
+| `expires_at` | timestamp | NOT NULL |
+| `created_at` | timestamp | |
+
+---
+
+### `faqs` — Preguntas frecuentes
+
+Gestionadas desde el panel administrativo del CRM. El administrador crea, edita, elimina y activa/desactiva individualmente cada pregunta (RF-MKT-001).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `question` | text | NOT NULL |
+| `answer` | text | NOT NULL |
+| `is_active` | boolean | default `true` — `false` = conservada pero no visible en tienda |
+| `sort_order` | int | default 0 |
+| `created_by` | uuid | FK → `users.id` — administrador que la creó |
+| `updated_by` | uuid | nullable FK → `users.id` — último administrador que la editó |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+
+---
+
+## ERD — Módulo Compradores y Órdenes
 
 ```mermaid
 erDiagram
-  users ||--o{ user_addresses : ""
-  users ||--o{ user_crm_links : ""
-  users ||--o{ carts : ""
-  users ||--o{ orders : ""
+    users {
+        uuid        id
+        varchar     first_name
+        varchar     last_name
+        varchar     email                   "UNIQUE NOT NULL"
+        text        password_hash
+        varchar     phone                   "nullable"
+        boolean     email_verified          "default false"
+        timestamp   email_verified_at       "nullable"
+        varchar     status                  "active|blocked"
+        timestamp   created_at
+        timestamp   updated_at
+        timestamp   deleted_at              "nullable"
+    }
 
-  carts ||--o{ cart_items : ""
+    user_crm_links {
+        uuid        id
+        uuid        user_id                 "FK → users"
+        varchar     crm_email
+        varchar     crm_reference_id        "nullable"
+        timestamp   linked_at
+    }
 
-  orders ||--o{ order_items : ""
-  orders ||--o{ order_addresses : ""
-  orders ||--o{ order_shipments : ""
-  orders ||--o{ order_payments : ""
-  orders ||--o{ order_status_history : ""
-  orders ||--o| order_return_metadata : ""
-  orders ||--o{ guest_order_access : ""
+    user_addresses {
+        uuid        id
+        uuid        user_id                 "FK → users"
+        varchar     recipient_name
+        varchar     phone                   "nullable"
+        varchar     address_line1
+        varchar     address_line2           "nullable"
+        varchar     city
+        varchar     state
+        varchar     postal_code
+        varchar     country
+        boolean     is_default              "default false"
+        timestamp   created_at
+        timestamp   updated_at
+    }
 
-  order_shipments ||--o{ order_shipment_items : ""
-  order_items ||--o{ order_shipment_items : ""
+    user_notification_preferences {
+        uuid        id
+        uuid        user_id                 "UNIQUE FK → users"
+        boolean     email_order_updates     "default true"
+        boolean     email_shipping_updates  "default true"
+        boolean     email_marketing         "default false"
+        boolean     email_security          "default true — no desactivable"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    carts {
+        uuid        id                      "cartId en cookie"
+        uuid        user_id                 "nullable — NULL si guest"
+        varchar     status                  "active|merged|expired"
+        timestamp   expires_at
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    cart_items {
+        uuid        id
+        uuid        cart_id                 "FK → carts"
+        uuid        listing_id              "FK → listings"
+        uuid        listing_variation_id    "nullable FK → listing_variations"
+        int         quantity
+        decimal     price_snapshot          "informativo — precio real se recalcula al pagar"
+        timestamp   created_at
+    }
+
+    auth_tokens {
+        uuid        id
+        uuid        user_id                 "FK → users"
+        varchar     type                    "verify_email|reset_password"
+        text        token_hash
+        timestamp   expires_at
+        timestamp   used_at                 "nullable"
+        timestamp   created_at
+    }
+
+    orders {
+        uuid        id                      "UUID interno — nunca visible al cliente"
+        varchar     visible_order_id        "nullable — GTS-YYYY-{so_id}"
+        varchar     so_id                   "nullable — ID del CRM so_info.id"
+        uuid        user_id                 "nullable — NULL si guest"
+        varchar     customer_first_name
+        varchar     customer_last_name
+        varchar     customer_email
+        varchar     customer_phone          "nullable"
+        enum        customer_type           "guest|registered"
+        enum        status                  "pending|paid|processing|shipped|delivered|completed|cancelled|partially_returned|fully_returned"
+        varchar     currency                "default USD"
+        decimal     subtotal
+        decimal     shipping_cost           "suma de todos los shipments"
+        decimal     tax_amount
+        decimal     total
+        boolean     label_generated         "default false — bloquea cancelación"
+        timestamp   label_generated_at      "nullable"
+        boolean     has_stock_conflict      "default false — flag de sobreventa"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    order_addresses {
+        uuid        id
+        uuid        order_id                "FK → orders"
+        varchar     type                    "shipping|billing"
+        varchar     recipient_name
+        varchar     phone                   "nullable"
+        varchar     address_line1
+        varchar     address_line2           "nullable"
+        varchar     city
+        varchar     state
+        varchar     postal_code
+        varchar     country
+    }
+
+    order_items {
+        uuid        id
+        uuid        order_id                "FK → orders"
+        uuid        listing_id              "FK → listings"
+        uuid        listing_variation_id    "nullable"
+        varchar     product_name            "snapshot"
+        varchar     product_sku             "nullable snapshot"
+        varchar     product_condition       "nullable snapshot EXCELLENT|GOOD|FAIR"
+        int         quantity
+        decimal     unit_price              "precio histórico"
+        decimal     subtotal
+        int         crm_warehouse_id        "int — tabla externa"
+    }
+
+    order_shipments {
+        uuid        id
+        uuid        order_id                "FK → orders"
+        int         crm_warehouse_id        "int — tabla externa"
+        enum        status                  "pending|label_generated|shipped|delivered|failed"
+        varchar     carrier                 "nullable"
+        varchar     service                 "nullable"
+        decimal     shipping_cost
+        boolean     insurance_selected      "default false"
+        decimal     insurance_cost          "nullable"
+        varchar     tracking_number         "nullable"
+        varchar     tracking_url            "nullable"
+        varchar     label_url               "nullable"
+        varchar     shipengine_shipment_id  "nullable"
+        timestamp   label_generated_at      "nullable"
+        timestamp   shipped_at              "nullable"
+        timestamp   delivered_at            "nullable"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    order_shipment_items {
+        uuid        id
+        uuid        order_shipment_id       "FK → order_shipments"
+        uuid        order_item_id           "FK → order_items"
+        int         quantity
+    }
+
+    payment_intents {
+        uuid        id
+        uuid        order_id                "FK → orders"
+        varchar     idempotency_key         "UNIQUE — reintentos seguros"
+        varchar     provider                "default stripe — extensible"
+        varchar     provider_payment_intent_id "UNIQUE"
+        varchar     provider_charge_id      "nullable"
+        decimal     amount
+        varchar     currency                "default USD"
+        enum        status                  "created|requires_payment_method|requires_confirmation|requires_action|processing|succeeded|failed|cancelled"
+        varchar     payment_method_type     "nullable card|apple_pay|google_pay"
+        varchar     card_last4              "nullable"
+        varchar     card_brand              "nullable"
+        text        client_secret           "nullable — Stripe frontend SDK"
+        varchar     failure_code            "nullable"
+        text        failure_message         "nullable — interno"
+        int         retry_count             "default 0"
+        int         max_retries             "default 3"
+        timestamp   next_retry_at           "nullable"
+        decimal     refunded_amount         "default 0"
+        jsonb       metadata                "nullable — datos extra del provider"
+        timestamp   created_at
+        timestamp   updated_at
+        timestamp   deleted_at              "nullable"
+    }
+
+    order_status_history {
+        uuid        id
+        uuid        order_id                "FK → orders"
+        varchar     status
+        uuid        changed_by              "nullable FK → users — null = sistema"
+        enum        source                  "admin|system|shipengine_webhook"
+        text        notes                   "nullable"
+        timestamp   created_at
+    }
+
+    inventory_reservations {
+        uuid        id
+        uuid        order_id                "FK → orders"
+        uuid        listing_id              "FK → listings"
+        uuid        listing_variation_id    "nullable FK → listing_variations"
+        int         crm_inventory_id        "int — tabla externa"
+        int         quantity
+        enum        status                  "pending|confirmed|released|expired"
+        timestamp   expires_at
+        timestamp   released_at             "nullable"
+        varchar     release_reason          "nullable payment_failed|order_cancelled|expired|confirmed"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    saga_instances {
+        uuid        id
+        varchar     saga_type               "checkout|return"
+        uuid        order_id                "FK → orders"
+        enum        status                  "started|inventory_reserved|payment_processing|succeeded|compensating|compensated|failed"
+        varchar     current_step            "nullable"
+        jsonb       steps                   "[{step, status, completed_at, error}]"
+        jsonb       compensation_steps      "nullable"
+        text        failure_reason          "nullable"
+        timestamp   started_at
+        timestamp   completed_at            "nullable"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    order_return_metadata {
+        uuid        id
+        uuid        order_id                "FK → orders"
+        varchar     return_type             "partial|full"
+        text        return_reason           "nullable"
+        jsonb       returned_items          "nullable [{order_item_id, quantity, notes}]"
+        decimal     refund_amount           "nullable"
+        varchar     refund_method           "nullable transfer|check|other"
+        timestamp   received_at             "nullable"
+        uuid        processed_by            "FK → users"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    guest_order_access {
+        uuid        id
+        uuid        order_id                "FK → orders"
+        text        access_token_hash
+        timestamp   expires_at
+        timestamp   created_at
+    }
+
+    faqs {
+        uuid        id
+        text        question
+        text        answer
+        boolean     is_active               "default true"
+        int         sort_order              "default 0"
+        uuid        created_by              "FK → users"
+        uuid        updated_by              "nullable FK → users"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    users               ||--o{   user_addresses                  : "direcciones guardadas"
+    users               ||--o{   user_crm_links                  : "vínculo CRM opcional"
+    users               ||--o{   carts                           : "carritos"
+    users               ||--o{   orders                          : "órdenes como registrado"
+    users               ||--o{   auth_tokens                     : "tokens de verificación"
+    users               ||--o|   user_notification_preferences   : "preferencias de notificación"
+
+    carts               ||--o{   cart_items                      : "productos en el carrito"
+
+    orders              ||--o{   order_items                     : "líneas de la orden"
+    orders              ||--o{   order_addresses                 : "snapshot dirección envío/facturación"
+    orders              ||--o{   order_shipments                 : "un shipment por bodega"
+    orders              ||--o{   payment_intents                 : "intents de pago"
+    orders              ||--o{   order_status_history            : "historial de estados append-only"
+    orders              ||--o|   order_return_metadata           : "metadata de devolución"
+    orders              ||--o{   guest_order_access              : "tokens para invitados"
+    orders              ||--o{   inventory_reservations          : "ítems reservados en checkout"
+    orders              ||--o{   saga_instances                  : "estado del Saga Orchestrator"
+
+    order_shipments     ||--o{   order_shipment_items            : "ítems de este shipment"
+    order_items         ||--o{   order_shipment_items            : "aparece en N shipments"
 ```
 
 ---
 
-# Notas finales de arquitectura
+## Máquina de estados — Órdenes
 
-- `users` y `orders` están desacoplados para soportar guest correctamente
-- `orders` contiene snapshot completo para integridad histórica (precios, datos del cliente)
-- `visible_order_id` en `orders` se genera solo tras recibir `so_id` del CRM — nunca se asume disponible de inmediato
-- `order_shipments` es la unidad de envío; una orden tiene ≥1 shipments. La generación de cualquier label (`label_generated_at NOT NULL`) activa `orders.label_generated = TRUE`, bloqueando cancelaciones
-- `order_shipment_items` es el puente order_items ↔ order_shipments; necesario para emails por shipment y detalle del comprobante
-- `order_payments` desacopla la lógica de Stripe del modelo de orden; soporta reintentos y registro de rechazos
-- `order_status_history` es append-only — nunca se actualiza ni borra; cubre actualizaciones manuales del admin y webhooks de ShipEngine
-- `carts` soporta persistencia híbrida (DB + cookie UUID)
-- `guest_order_access` es obligatorio para acceso a la orden sin cuenta
-- `auth_tokens` evita almacenar tokens en texto plano
-- `price_config_history` es append-only — registro inmutable de cambios de descuento para auditoría
-- `shipping_restrictions` usa `is_active` para desactivar sin borrar — permite reactivar restricciones rápidamente
-- `faqs` usa `is_active` y `sort_order` para control fino desde el CRM sin exponer registros eliminados permanentemente
+```
+pending         → paid                 (Stripe confirma pago: payment_intent.status = succeeded)
+paid            → processing           (administrador inicia preparación)
+paid            → cancelled            (cliente cancela ANTES de que label_generated = true)
+processing      → shipped              (webhook ShipEngine: label escaneada por carrier)
+shipped         → delivered            (webhook ShipEngine: confirmación de entrega)
+delivered       → completed            (orden cerrada)
+delivered       → partially_returned   (admin registra devolución parcial)
+delivered       → fully_returned       (admin registra devolución total)
+any             → cancelled            (SOLO si label_generated = false)
+```
+
+## Máquina de estados — payment_intents
+
+```
+created                   → requires_payment_method  (intent creado sin método)
+requires_payment_method   → requires_confirmation    (cliente ingresa datos de tarjeta)
+requires_confirmation     → requires_action          (3DS / autenticación adicional)
+requires_confirmation     → processing               (pago sin 3DS)
+requires_action           → processing               (cliente completa autenticación)
+processing                → succeeded                (Stripe confirma cobro)
+processing                → failed                   (Stripe rechaza — PaymentWorker agenda retry)
+failed                    → processing               (PaymentWorker reintenta — retry_count++)
+failed                    → cancelled                (max_retries alcanzado — compensación Saga)
+succeeded                 → (parcialmente refunded)  (refunded_amount > 0, no cambia status principal)
+```
+
+---
+
+---
+
+## Módulo 3 — Infraestructura Async y Notificaciones
+
+> Tablas de soporte para el patrón Outbox, almacén de webhooks entrantes, plantillas y entrega de notificaciones, e idempotencia durable. Estas tablas son escritas por los módulos de negocio pero gestionadas por workers y procesos de infraestructura.
+
+---
+
+### `outbox_events` — Transactional Outbox (garantía de entrega async)
+
+Cada módulo de negocio escribe aquí **en la misma transacción de BD** que modifica su entidad principal. Un proceso de polling lee filas `pending` y las publica a BullMQ. Garantiza que si el proceso muere entre el commit y el publish, el evento no se pierde — el worker de polling lo reintentará al reiniciar.
+
+Escrito por: `Payments`, `InventoryReservation`, `StockSync`, `Notifications`, `Listings`.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `aggregate_type` | varchar | NOT NULL — entidad de origen: `order \| payment \| inventory \| listing \| notification` |
+| `aggregate_id` | uuid | NOT NULL — ID de la entidad que originó el evento |
+| `event_type` | varchar | NOT NULL — ej. `order.paid`, `payment.succeeded`, `inventory.reserved`, `stock.updated` |
+| `payload` | jsonb | NOT NULL — datos del evento; incluye todo lo necesario para el handler |
+| `status` | enum | NOT NULL default `pending` — `pending \| processing \| published \| failed` |
+| `published_at` | timestamp | nullable — cuándo fue publicado exitosamente a BullMQ |
+| `retry_count` | int | NOT NULL default `0` |
+| `last_error` | text | nullable — último error del worker de polling |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+
+> **Índice recomendado:** `(status, created_at)` para el polling query: `WHERE status = 'pending' ORDER BY created_at LIMIT 100`.
+
+---
+
+### `webhook_events` — Almacén de webhooks entrantes
+
+Persiste cada webhook recibido de proveedores externos (Stripe, ShipEngine, eBay). El `WebhookWorker` lo escribe y lo marca como procesado. El `UNIQUE (provider, provider_event_id)` garantiza idempotencia: si Stripe envía el mismo evento dos veces, el segundo insert falla y el worker lo descarta.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `provider` | varchar(50) | NOT NULL — `stripe \| shipengine \| ebay` |
+| `provider_event_id` | varchar | NOT NULL — ID único del evento en el provider (ej. `evt_3OaB...`) |
+| `event_type` | varchar | NOT NULL — ej. `payment_intent.succeeded`, `charge.refunded`, `order.tracking_updated` |
+| `payload` | jsonb | NOT NULL — payload raw del webhook sin modificar |
+| `status` | enum | NOT NULL default `received` — `received \| processing \| processed \| failed \| ignored` |
+| `processed_at` | timestamp | nullable |
+| `error_message` | text | nullable — error del `WebhookWorker` |
+| `retry_count` | int | NOT NULL default `0` |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+
+> **Constraint:** `UNIQUE (provider, provider_event_id)` — núcleo de la idempotencia de webhooks.
+
+---
+
+### `payment_intent_events` — Historial del ciclo de vida del pago
+
+Append-only. Cada transición de estado del `payment_intent` genera una fila. Traza qué evento de webhook originó cada cambio. Permite auditoría completa del ciclo de vida: creación, intentos de cobro, reintentos del `PaymentWorker`, reembolsos, disputes.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `payment_intent_id` | uuid | FK → `payment_intents.id` NOT NULL |
+| `event_type` | varchar | NOT NULL — `created \| charge.succeeded \| charge.failed \| charge.refunded \| dispute.created \| retry.scheduled \| cancelled` |
+| `status_before` | varchar | nullable — estado del intent antes del evento |
+| `status_after` | varchar | NOT NULL — estado del intent después del evento |
+| `amount` | decimal(10,2) | nullable — monto relevante para este evento (ej. monto del reembolso) |
+| `provider_event_id` | varchar | nullable — ID del webhook que originó este cambio (referencia a `webhook_events.provider_event_id`) |
+| `payload` | jsonb | nullable — fragmento relevante del payload del provider |
+| `created_at` | timestamp | NOT NULL |
+
+---
+
+### `notification_templates` — Plantillas de notificación reutilizables
+
+Plantillas gestionadas por el equipo de desarrollo/admin. El `Notifications Module` busca la plantilla por `key` y renderiza el cuerpo sustituyendo las variables. Las variables están documentadas en `variables` para que el admin sepa qué datos están disponibles.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `key` | varchar | UNIQUE NOT NULL — `order_confirmed \| order_shipped \| order_delivered \| password_reset \| email_verification \| stock_conflict_alert` |
+| `name` | varchar | NOT NULL — nombre legible para el panel admin |
+| `channel` | enum | NOT NULL — `email \| sms \| push` (V1: solo `email`) |
+| `subject` | varchar | nullable — asunto del email; soporta variables `{{order_id}}` |
+| `body_html` | text | NOT NULL — cuerpo HTML; soporta variables Handlebars `{{variable}}` |
+| `body_text` | text | nullable — fallback en texto plano |
+| `variables` | jsonb | nullable — `[{name, description, required, example}]` — documentación de variables disponibles |
+| `is_active` | boolean | NOT NULL default `true` |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+| `deleted_at` | timestamp | nullable |
+
+---
+
+### `notification_deliveries` — Log de entrega de notificaciones
+
+Cada intento de envío del `EmailWorker` genera una fila. Permite retry de notificaciones fallidas, auditoría de entregas y detección de bounces. Soporta tanto notificaciones a usuarios registrados como a guests (por email directo).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `template_key` | varchar | nullable — clave de la plantilla usada; null si es notificación ad-hoc |
+| `channel` | enum | NOT NULL — `email \| sms \| push` |
+| `recipient_type` | enum | NOT NULL — `registered_user \| guest` |
+| `recipient_user_id` | uuid | nullable FK → `users.id` — null si es guest |
+| `recipient_email` | varchar | nullable — obligatorio para canal `email` y para guests |
+| `subject` | varchar | nullable — asunto renderizado final |
+| `reference_type` | varchar | nullable — entidad relacionada: `order \| payment \| user` |
+| `reference_id` | uuid | nullable — ID de la entidad relacionada |
+| `status` | enum | NOT NULL — `pending \| sending \| delivered \| failed \| bounced` |
+| `provider` | varchar | nullable — `ses \| sendgrid \| smtp` |
+| `provider_message_id` | varchar | nullable — ID de mensaje en el provider para tracking |
+| `error_message` | text | nullable |
+| `retry_count` | int | NOT NULL default `0` |
+| `sent_at` | timestamp | nullable |
+| `delivered_at` | timestamp | nullable — confirmado por webhook del provider de email |
+| `opened_at` | timestamp | nullable — pixel de tracking (cuando aplique) |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+
+---
+
+### `idempotency_keys` — Idempotencia durable para operaciones críticas
+
+Respaldo en PostgreSQL de las claves de idempotencia que Redis mantiene en memoria. Si Redis se reinicia y pierde las claves, esta tabla evita que un resubmit del cliente (ej. doble-click en "Confirmar compra") cree una segunda orden o un segundo cobro.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `key` | varchar | UNIQUE NOT NULL — clave enviada por el cliente en header `Idempotency-Key` |
+| `request_path` | varchar | NOT NULL — endpoint al que aplica, ej. `POST /api/v1/orders` |
+| `request_hash` | varchar | NOT NULL — hash del body normalizado; detecta si el mismo key se usa con body diferente |
+| `response_status` | int | nullable — HTTP status de la respuesta cacheada |
+| `response_body` | jsonb | nullable — respuesta cacheada para devolver en el resubmit |
+| `resource_type` | varchar | nullable — tipo de recurso creado: `order \| payment` |
+| `resource_id` | uuid | nullable — ID del recurso creado |
+| `expires_at` | timestamp | NOT NULL — típicamente 24h desde la creación |
+| `created_at` | timestamp | NOT NULL |
+
+---
+
+## ERD — Módulo Infraestructura Async
+
+```mermaid
+erDiagram
+    payment_intents {
+        uuid        id
+        uuid        order_id                "FK → orders"
+        varchar     idempotency_key         "UNIQUE"
+        varchar     provider                "default stripe"
+        varchar     provider_payment_intent_id "UNIQUE"
+        varchar     provider_charge_id      "nullable"
+        decimal     amount
+        varchar     currency                "default USD"
+        enum        status
+        varchar     payment_method_type     "nullable"
+        varchar     card_last4              "nullable"
+        varchar     card_brand              "nullable"
+        text        client_secret           "nullable"
+        varchar     failure_code            "nullable"
+        text        failure_message         "nullable"
+        int         retry_count             "default 0"
+        int         max_retries             "default 3"
+        timestamp   next_retry_at           "nullable"
+        decimal     refunded_amount         "default 0"
+        jsonb       metadata                "nullable"
+        timestamp   created_at
+        timestamp   updated_at
+        timestamp   deleted_at              "nullable"
+    }
+
+    payment_intent_events {
+        uuid        id
+        uuid        payment_intent_id       "FK → payment_intents"
+        varchar     event_type
+        varchar     status_before           "nullable"
+        varchar     status_after
+        decimal     amount                  "nullable"
+        varchar     provider_event_id       "nullable — ref a webhook_events"
+        jsonb       payload                 "nullable"
+        timestamp   created_at
+    }
+
+    webhook_events {
+        uuid        id
+        varchar     provider                "stripe|shipengine|ebay"
+        varchar     provider_event_id       "UNIQUE por provider"
+        varchar     event_type
+        jsonb       payload
+        enum        status                  "received|processing|processed|failed|ignored"
+        timestamp   processed_at            "nullable"
+        text        error_message           "nullable"
+        int         retry_count             "default 0"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    outbox_events {
+        uuid        id
+        varchar     aggregate_type
+        uuid        aggregate_id
+        varchar     event_type
+        jsonb       payload
+        enum        status                  "pending|processing|published|failed"
+        timestamp   published_at            "nullable"
+        int         retry_count             "default 0"
+        text        last_error              "nullable"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    notification_templates {
+        uuid        id
+        varchar     key                     "UNIQUE"
+        varchar     name
+        enum        channel                 "email|sms|push"
+        varchar     subject                 "nullable"
+        text        body_html
+        text        body_text               "nullable"
+        jsonb       variables               "nullable"
+        boolean     is_active               "default true"
+        timestamp   created_at
+        timestamp   updated_at
+        timestamp   deleted_at              "nullable"
+    }
+
+    notification_deliveries {
+        uuid        id
+        varchar     template_key            "nullable — ref notification_templates.key"
+        enum        channel                 "email|sms|push"
+        enum        recipient_type          "registered_user|guest"
+        uuid        recipient_user_id       "nullable FK → users"
+        varchar     recipient_email         "nullable"
+        varchar     subject                 "nullable"
+        varchar     reference_type          "nullable order|payment|user"
+        uuid        reference_id            "nullable"
+        enum        status                  "pending|sending|delivered|failed|bounced"
+        varchar     provider                "nullable ses|sendgrid|smtp"
+        varchar     provider_message_id     "nullable"
+        text        error_message           "nullable"
+        int         retry_count             "default 0"
+        timestamp   sent_at                 "nullable"
+        timestamp   delivered_at            "nullable"
+        timestamp   opened_at               "nullable"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    idempotency_keys {
+        uuid        id
+        varchar     key                     "UNIQUE — header Idempotency-Key"
+        varchar     request_path
+        varchar     request_hash
+        int         response_status         "nullable"
+        jsonb       response_body           "nullable"
+        varchar     resource_type           "nullable order|payment"
+        uuid        resource_id             "nullable"
+        timestamp   expires_at
+        timestamp   created_at
+    }
+
+    payment_intents         ||--o{   payment_intent_events           : "historial del intent (append-only)"
+    notification_templates  ||--o{   notification_deliveries         : "entregas usando esta plantilla"
+```
+
+---
+
+## Notas finales de arquitectura
+
+### Módulo Listings
+- `listings` y `listing_variations` usan `status = inactive` como soft delete — ciclo de vida propio
+- `gts_categories` usa `is_active = false` — catálogo de referencia con FKs activas
+- `listing_channel_ebay` y `listing_channel_gts_store` usan `deleted_at` — conserva historial de configuración del canal
+- `listing_stock_movements` es un ledger contable — **nunca borrar ni actualizar**; correcciones via `movement_type = ADJUSTMENT`
+- `price_config_history` es append-only — registro inmutable de cambios de descuento (RF-PAG-002)
+- `shipping_restrictions` usa `is_active` para desactivar sin borrar (RF-LOG-002)
+
+### Módulo Compradores/Órdenes
+- `users` y `orders` están desacoplados — guest checkout sin cuenta
+- `orders` snapshot completo del cliente e ítems — no depende de que el listing exista tras la compra
+- `visible_order_id` se genera **solo** tras recibir `so_id` del CRM (RF-ORD-001 RN-5)
+- `order_shipments` es la unidad de envío; cualquier label activa `orders.label_generated = true`, bloqueando cancelaciones (RF-ORD-001 RN-4)
+- `order_shipment_items` puente `order_items ↔ order_shipments`; necesario para emails por shipment (RF-NOT-001)
+- `payment_intents` reemplaza `order_payments` — provider-agnostic, retry tracking, idempotency_key, client_secret para 3DS
+- `order_status_history` es append-only — cubre actualizaciones del admin y webhooks de ShipEngine
+- `inventory_reservations` mantiene el stock reservado durante el Saga; auto-expira si el checkout no completa
+- `saga_instances` persiste el estado del Saga Orchestrator para recuperación tras crashes
+- `user_notification_preferences.email_security` no puede desactivarse desde la UI — protege tokens críticos
+- `guest_order_access` es obligatorio para acceso a la orden sin cuenta (RF-PCV-001)
+- `auth_tokens` hash — nunca texto plano (RF-USR-006)
+
+### Módulo Infraestructura Async
+- `outbox_events` se escribe en la **misma transacción** que el cambio de negocio — garantía at-least-once hacia BullMQ
+- `webhook_events` `UNIQUE (provider, provider_event_id)` — idempotencia de webhooks; doble-delivery = segundo insert falla silenciosamente
+- `payment_intent_events` append-only — traza cada transición de estado del pago con el evento de webhook que la originó
+- `notification_deliveries` permite retry del `EmailWorker`, detección de bounces y auditoría de entregas por orden/usuario
+- `idempotency_keys` respaldo durable de Redis — si Redis se pierde, evita doble orden o doble cobro en resubmits
+- `outbox_events` no tiene FKs a las entidades de negocio — `aggregate_id` es una referencia lógica por diseño (el polling worker no necesita JOIN, solo el payload)
+- Tablas append-only (`payment_intent_events`, `order_status_history`, `listing_stock_movements`, `price_config_history`): **nunca se actualiza ni borra ninguna fila**
