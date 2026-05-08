@@ -7,18 +7,34 @@
 
 ## Tablas
 
+### `gts_categories` — Catálogo de categorías GTS
+
+Categorías internas planas (sin anidamiento) usadas para agrupar listings en la GTS Store. No se eliminan — se desactivan con `is_active = false` para no romper FKs existentes.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `name` | varchar | Nombre de la categoría — ej: `Laptops`, `Desktops`, `Phones` |
+| `is_active` | boolean | `false` = desactivada, no aparece en selectores pero mantiene FKs |
+| `sort_order` | int | |
+| `created_at` | timestamp | |
+| `updated_at` | timestamp | |
+
+---
+
 ### `listings` — Listing principal
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
+| `id` | uuid | PK |
 | `title` | varchar | nullable — draft puede no tener título aún |
 | `description` | text | nullable |
 | `condition` | enum | nullable — `NEW \| OPEN_BOX \| USED \| REFURBISHED \| PARTS` |
 | `listing_type` | enum | `LISTING \| TEMPLATE` |
 | `status` | enum | `draft \| ready \| scheduled \| published \| partially_published \| out_of_stock \| unpublished \| inactive` |
 | `source_type` | enum | `ORIGINAL \| FROM_TEMPLATE \| FROM_COPY` |
-| `source_id` | int | nullable FK → `listings.id` — origen si es copia o desde template |
+| `source_id` | uuid | nullable FK → `listings.id` — origen si es copia o desde template |
+| `gts_category_id` | uuid | nullable FK → `gts_categories.id` — categoría para agrupar en GTS Store |
 | `is_variation` | boolean | `false` = single / `true` = con variaciones |
 | `shipping_policy` | enum | nullable — `NORMAL \| FREIGHT \| FREE` |
 | `fixed_shipping_cost` | decimal | nullable — obligatorio para política `FREIGHT`; fallback para `NORMAL` si ShipEngine no disponible |
@@ -29,9 +45,14 @@
 | `dim_height` | decimal | nullable |
 | `dim_unit` | varchar | nullable — `IN \| CM` |
 | `has_r2v3_cert` | boolean | |
+| `r2v3_data_sanitization` | enum | nullable — `N/A \| Non-Data \| ...` |
+| `r2v3_cosmetic` | enum | nullable — `N/A \| C1 \| C2 \| ...` |
+| `r2v3_functionality` | enum | nullable — `N/A \| F1 \| F2 \| ...` |
 | `ebay_category_id` | varchar | nullable |
 | `ebay_category_name` | varchar | nullable |
 | `shared_aspects` | jsonb | nullable — `{ Brand, Model, ... }` |
+| `important_notes` | jsonb | nullable — array de notas importantes del producto |
+| `included_items` | jsonb | nullable — array de ítems incluidos con el producto |
 | `meta_title` | varchar | nullable — SEO: título de la página del producto (RF-MKT-004) |
 | `meta_description` | text | nullable — SEO: descripción para motores de búsqueda (RF-MKT-004) |
 | `slug` | varchar | unique, nullable — URL amigable ej. `cisco-catalyst-switch-3750` (RF-MKT-004) |
@@ -49,8 +70,8 @@ Solo existe cuando `is_variation = false`. Para variaciones el precio vive en `l
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
-| `listing_id` | int | FK único → `listings.id` |
+| `id` | uuid | PK |
+| `listing_id` | uuid | FK único → `listings.id` |
 | `sku` | varchar | nullable en draft |
 | `base_price` | decimal | nullable en draft — ingresado por el empleado |
 | `ebay_discount_pct` | decimal | nullable — snapshot del config al crear |
@@ -66,8 +87,8 @@ Solo existe cuando `is_variation = true`. Define qué atributos diferencian las 
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
-| `listing_id` | int | FK → `listings.id` |
+| `id` | uuid | PK |
+| `listing_id` | uuid | FK → `listings.id` |
 | `aspect_name` | varchar | ej: `Color`, `Storage Capacity`, `RAM` |
 | `values` | jsonb | ej: `["Space Gray", "Gold", "Sierra Blue"]` |
 | `affects_image` | boolean | `true` → cada variación puede tener imagen propia |
@@ -81,8 +102,8 @@ Solo existe cuando `is_variation = true`. Cada fila = un SKU con precio propio.
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
-| `listing_id` | int | FK → `listings.id` |
+| `id` | uuid | PK |
+| `listing_id` | uuid | FK → `listings.id` |
 | `sku` | varchar | nullable en draft |
 | `label` | varchar | nullable — ej: `256GB / Gold` |
 | `aspects` | jsonb | nullable — `{ Color: ["Gold"], Storage: ["256 GB"] }` |
@@ -100,9 +121,9 @@ Solo existe cuando `is_variation = true`. Cada fila = un SKU con precio propio.
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
-| `listing_id` | int | FK → `listings.id` |
-| `listing_variation_id` | int | nullable FK — `null` = imagen del grupo |
+| `id` | uuid | PK |
+| `listing_id` | uuid | FK → `listings.id` |
+| `listing_variation_id` | uuid | nullable FK — `null` = imagen del grupo |
 | `original_url` | varchar | URL en servidor privado |
 | `ebay_url` | varchar | nullable — resultado de `createImageFromUrl` |
 | `gts_store_url` | varchar | nullable |
@@ -118,9 +139,9 @@ Cada fila = un ítem físico del CRM vinculado al listing. `UNIQUE` en `crm_inve
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
-| `listing_id` | int | FK → `listings.id` |
-| `listing_variation_id` | int | nullable FK — `null` = single listing |
+| `id` | uuid | PK |
+| `listing_id` | uuid | FK → `listings.id` |
+| `listing_variation_id` | uuid | nullable FK — `null` = single listing |
 | `crm_inventory_id` | int | ID principal en la tabla `inventory` del CRM — UNIQUE |
 | `crm_po_id` | varchar | nullable — número de PO en el CRM |
 | `crm_po_line` | varchar | nullable — línea de la PO en el CRM |
@@ -135,9 +156,9 @@ Una fila por listing (simple) o por variación. Es el número que se muestra en 
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
-| `listing_id` | int | FK → `listings.id` |
-| `listing_variation_id` | int | nullable FK — `null` = single listing |
+| `id` | uuid | PK |
+| `listing_id` | uuid | FK → `listings.id` |
+| `listing_variation_id` | uuid | nullable FK — `null` = single listing |
 | `quantity_available` | int | Stock disponible en este momento |
 | `updated_at` | timestamp | |
 
@@ -149,9 +170,9 @@ Cada cambio de stock genera una fila aquí. El stock actual puede verificarse co
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
-| `listing_id` | int | FK → `listings.id` |
-| `listing_variation_id` | int | nullable FK |
+| `id` | uuid | PK |
+| `listing_id` | uuid | FK → `listings.id` |
+| `listing_variation_id` | uuid | nullable FK |
 | `quantity_delta` | int | `+` entra / `−` sale |
 | `quantity_after` | int | Snapshot del stock tras este movimiento |
 | `movement_type` | enum | Ver tabla de tipos abajo |
@@ -185,8 +206,8 @@ Cada cambio de stock genera una fila aquí. El stock actual puede verificarse co
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
-| `listing_id` | int | FK único → `listings.id` |
+| `id` | uuid | PK |
+| `listing_id` | uuid | FK único → `listings.id` |
 | `ebay_linked_account_id` | int | FK → `gobig_ebay_linked_accounts` |
 | `ebay_listing_id` | varchar | nullable — devuelto por `publishOffer` |
 | `ebay_sku` | varchar | nullable — solo single (`is_variation = false`) |
@@ -214,9 +235,9 @@ Solo existe cuando `is_variation = true`. Cada fila = 1 inventory item + 1 offer
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
-| `listing_channel_ebay_id` | int | FK → `listing_channel_ebay.id` |
-| `listing_variation_id` | int | FK → `listing_variations.id` |
+| `id` | uuid | PK |
+| `listing_channel_ebay_id` | uuid | FK → `listing_channel_ebay.id` |
+| `listing_variation_id` | uuid | FK → `listing_variations.id` |
 | `ebay_sku` | varchar | SKU enviado a `PUT /inventory_item/{sku}` |
 | `ebay_offer_id` | varchar | offerId devuelto por `POST /offer` |
 
@@ -226,8 +247,8 @@ Solo existe cuando `is_variation = true`. Cada fila = 1 inventory item + 1 offer
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
-| `listing_id` | int | FK único → `listings.id` |
+| `id` | uuid | PK |
+| `listing_id` | uuid | FK único → `listings.id` |
 | `gts_store_product_id` | int | nullable — se llena tras crear en GTS Store |
 | `gts_store_slug` | varchar | nullable |
 | `gts_store_url` | varchar | nullable |
@@ -245,7 +266,7 @@ Manejada por el superadmin. Los porcentajes se copian como snapshot al listing e
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
+| `id` | uuid | PK |
 | `channel` | varchar | `EBAY \| GTS_STORE` |
 | `ebay_linked_account_id` | int | nullable — `null` = aplica a todos / id = solo esa cuenta eBay |
 | `discount_pct` | decimal | |
@@ -260,7 +281,7 @@ Registro de auditoría de cada modificación al descuento global por canal. Requ
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
+| `id` | uuid | PK |
 | `channel` | varchar | `EBAY \| GTS_STORE` |
 | `ebay_linked_account_id` | int | nullable — misma semántica que `price_config` |
 | `discount_pct_previous` | decimal | Valor anterior al cambio |
@@ -277,7 +298,7 @@ Configuración de ubicaciones a las que el sistema bloquea el envío. Gestionada
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
-| `id` | int | PK |
+| `id` | uuid | PK |
 | `restriction_type` | enum | `STATE \| ZIP_CODE \| COUNTRY \| MILITARY` — tipo de restricción |
 | `value` | varchar | Valor a bloquear — ej. `HI`, `PR`, `APO`, `FPO` |
 | `label` | varchar | Descripción legible — ej. `Hawaii`, `Puerto Rico` |
@@ -293,15 +314,25 @@ Configuración de ubicaciones a las que el sistema bloquea el envío. Gestionada
 ```mermaid
 erDiagram
 
+    gts_categories {
+        uuid        id
+        varchar     name
+        boolean     is_active
+        int         sort_order
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
     listings {
-        int         id
+        uuid        id
         varchar     title                   "nullable"
         text        description             "nullable"
         enum        condition               "nullable — NEW|OPEN_BOX|USED|REFURBISHED|PARTS"
         enum        listing_type            "LISTING|TEMPLATE"
         enum        status                  "draft|ready|scheduled|published|partially_published|out_of_stock|unpublished|inactive"
         enum        source_type             "ORIGINAL|FROM_TEMPLATE|FROM_COPY"
-        int         source_id               "nullable FK → listings.id"
+        uuid        source_id               "nullable FK → listings.id"
+        uuid        gts_category_id         "nullable FK → gts_categories.id"
         boolean     is_variation
         enum        shipping_policy         "nullable — NORMAL|FREIGHT|FREE"
         decimal     fixed_shipping_cost     "nullable"
@@ -312,9 +343,14 @@ erDiagram
         decimal     dim_height              "nullable"
         varchar     dim_unit                "nullable — IN|CM"
         boolean     has_r2v3_cert
+        enum        r2v3_data_sanitization  "nullable — N/A|Non-Data|..."
+        enum        r2v3_cosmetic           "nullable — N/A|C1|C2|..."
+        enum        r2v3_functionality      "nullable — N/A|F1|F2|..."
         varchar     ebay_category_id        "nullable"
         varchar     ebay_category_name      "nullable"
         jsonb       shared_aspects          "nullable"
+        jsonb       important_notes         "nullable"
+        jsonb       included_items          "nullable"
         varchar     meta_title              "nullable — SEO"
         text        meta_description        "nullable — SEO"
         varchar     slug                    "unique, nullable — URL amigable"
@@ -326,8 +362,8 @@ erDiagram
     }
 
     listing_pricing {
-        int         id
-        int         listing_id              "FK único"
+        uuid        id
+        uuid        listing_id              "FK único"
         varchar     sku                     "nullable"
         decimal     base_price              "nullable"
         decimal     ebay_discount_pct       "nullable — snapshot"
@@ -337,8 +373,8 @@ erDiagram
     }
 
     listing_variation_axes {
-        int         id
-        int         listing_id
+        uuid        id
+        uuid        listing_id
         varchar     aspect_name
         jsonb       values
         boolean     affects_image
@@ -346,8 +382,8 @@ erDiagram
     }
 
     listing_variations {
-        int         id
-        int         listing_id
+        uuid        id
+        uuid        listing_id
         varchar     sku                     "nullable"
         varchar     label                   "nullable"
         jsonb       aspects                 "nullable"
@@ -361,9 +397,9 @@ erDiagram
     }
 
     listing_images {
-        int         id
-        int         listing_id
-        int         listing_variation_id    "nullable"
+        uuid        id
+        uuid        listing_id
+        uuid        listing_variation_id    "nullable"
         varchar     original_url
         varchar     ebay_url                "nullable"
         varchar     gts_store_url           "nullable"
@@ -373,9 +409,9 @@ erDiagram
     }
 
     listing_inventory_links {
-        int         id
-        int         listing_id
-        int         listing_variation_id    "nullable"
+        uuid        id
+        uuid        listing_id
+        uuid        listing_variation_id    "nullable"
         int         crm_inventory_id        "UNIQUE — ID principal del CRM"
         varchar     crm_po_id               "nullable"
         varchar     crm_po_line             "nullable"
@@ -384,17 +420,17 @@ erDiagram
     }
 
     listing_stock {
-        int         id
-        int         listing_id
-        int         listing_variation_id    "nullable"
+        uuid        id
+        uuid        listing_id
+        uuid        listing_variation_id    "nullable"
         int         quantity_available
         timestamp   updated_at
     }
 
     listing_stock_movements {
-        int         id
-        int         listing_id
-        int         listing_variation_id    "nullable"
+        uuid        id
+        uuid        listing_id
+        uuid        listing_variation_id    "nullable"
         int         quantity_delta          "+ entra / - sale"
         int         quantity_after
         enum        movement_type           "INITIAL|SALE_EBAY|SALE_GTS_STORE|RETURN_EBAY|RETURN_GTS_STORE|CANCELLED_SALE|MANUAL_ADD|MANUAL_REMOVE|ADJUSTMENT|SYNC_EBAY|SYNC_GTS_STORE|LISTING_DEACTIVATED|LISTING_REACTIVATED"
@@ -406,8 +442,8 @@ erDiagram
     }
 
     listing_channel_ebay {
-        int         id
-        int         listing_id              "FK único"
+        uuid        id
+        uuid        listing_id              "FK único"
         int         ebay_linked_account_id
         varchar     ebay_listing_id         "nullable"
         varchar     ebay_sku                "nullable — single"
@@ -429,16 +465,16 @@ erDiagram
     }
 
     listing_channel_ebay_variations {
-        int         id
-        int         listing_channel_ebay_id
+        uuid        id
+        uuid        listing_channel_ebay_id
         int         listing_variation_id
         varchar     ebay_sku
         varchar     ebay_offer_id
     }
 
     listing_channel_gts_store {
-        int         id
-        int         listing_id              "FK único"
+        uuid        id
+        uuid        listing_id              "FK único"
         int         gts_store_product_id    "nullable"
         varchar     gts_store_slug          "nullable"
         varchar     gts_store_url           "nullable"
@@ -450,7 +486,7 @@ erDiagram
     }
 
     price_config {
-        int         id
+        uuid        id
         varchar     channel                 "EBAY|GTS_STORE"
         int         ebay_linked_account_id  "nullable — null=global / id=cuenta específica"
         decimal     discount_pct
@@ -459,7 +495,7 @@ erDiagram
     }
 
     price_config_history {
-        int         id
+        uuid        id
         varchar     channel                 "EBAY|GTS_STORE"
         int         ebay_linked_account_id  "nullable"
         decimal     discount_pct_previous
@@ -470,7 +506,7 @@ erDiagram
     }
 
     shipping_restrictions {
-        int         id
+        uuid        id
         enum        restriction_type        "STATE|ZIP_CODE|COUNTRY|MILITARY"
         varchar     value                   "ej. HI, PR, APO"
         varchar     label                   "ej. Hawaii, Puerto Rico"
@@ -479,6 +515,8 @@ erDiagram
         timestamp   created_at
         timestamp   updated_at
     }
+
+    gts_categories              ||--o{   listings                         : "categoría GTS Store"
 
     listings                    ||--o|   listing_pricing                  : "1-1 cuando is_variation=false"
     listings                    ||--o{   listing_variation_axes           : "ejes de variación"
