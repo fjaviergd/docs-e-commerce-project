@@ -1759,20 +1759,39 @@ Panel centralizado en el CRM para gestionar preguntas de clientes sobre listings
 |---|---|
 | **Módulo** | Contenido |
 | **Versión** | V1 |
-| **Actores** | Cliente, Administrador |
+| **Actores** | Cliente, Administrador (roles `ADMINISTRATOR`, `MANAGER`) |
 | **Precondiciones** | — |
 
 **Descripción:**
-Sección de preguntas frecuentes para resolver dudas comunes, reducir carga de soporte e informar sobre políticas.
+Sección de preguntas frecuentes para resolver dudas comunes, reducir carga de soporte e informar sobre políticas. Las preguntas se organizan por grupos (categorías) y la API las expone ya agrupadas para simplificar el renderizado en el frontend.
 
 **Requerimientos funcionales:**
-- RF-MKT-001-1: El sistema debe mostrar únicamente las preguntas con estado activo
-- RF-MKT-001-2: El administrador debe poder crear, editar y eliminar preguntas desde el CRM
+- RF-MKT-001-1: El sistema debe mostrar únicamente las preguntas con estado activo (`is_active = true`)
+- RF-MKT-001-2: El administrador debe poder crear, editar y eliminar preguntas desde el CRM (roles `ADMINISTRATOR` o `MANAGER`)
 - RF-MKT-001-3: El administrador debe poder activar o desactivar preguntas individualmente — las preguntas desactivadas se conservan en el sistema pero no se muestran en la tienda
-- RF-MKT-001-4 (Futura): Las preguntas deben poder categorizarse
-- RF-MKT-001-5 (Futura): Incluir buscador dentro del FAQ
+- RF-MKT-001-4: Las preguntas pertenecen a un grupo (`group`) que actúa como categoría. El campo es requerido al crear y sirve como agrupador en la respuesta de la API
+- RF-MKT-001-5: `GET /v1/faqs` retorna todas las preguntas activas agrupadas: `[{ group: string, faqs: FAQ[] }]`, ordenadas por grupo y `sort_order` dentro del grupo
+- RF-MKT-001-6: `GET /v1/faqs/groups/:group` retorna las preguntas activas de un grupo específico por slug (case-insensitive). Retorna 404 si el grupo no tiene preguntas activas
+- RF-MKT-001-7 (Futura): Incluir buscador dentro del FAQ
 
-**Categorías sugeridas:** Compras, Envíos, Garantías y devoluciones, Pagos, Impuestos
+**Grupos iniciales (seed):** `Payments`, `Shipping`, `Returns`, `About GTS`, `Inventory`
+
+**API — Endpoints públicos (sin autenticación):**
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| `GET` | `/v1/faqs` | Todas las preguntas activas agrupadas por `group` |
+| `GET` | `/v1/faqs/groups/:group` | Preguntas activas de un grupo específico (slug case-insensitive) |
+| `GET` | `/v1/faqs/:id` | Pregunta activa por UUID |
+
+**API — Endpoints administrativos (requiere JWT CRM — rol `ADMINISTRATOR` o `MANAGER`):**
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| `POST` | `/v1/faqs` | Crear pregunta |
+| `PATCH` | `/v1/faqs/:id` | Editar pregunta |
+| `PATCH` | `/v1/faqs/:id/toggle-status` | Activar / desactivar |
+| `DELETE` | `/v1/faqs/:id` | Soft delete (marca `is_active = false`) |
 
 ---
 

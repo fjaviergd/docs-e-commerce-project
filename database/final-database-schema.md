@@ -1086,19 +1086,22 @@ Parámetros del sistema configurables desde el panel administrativo del CRM por 
 
 ### `faqs` — Preguntas frecuentes
 
-Gestionadas desde el panel administrativo del CRM. El administrador crea, edita, elimina y activa/desactiva individualmente cada pregunta (RF-MKT-001).
+Gestionadas desde el panel administrativo del CRM. El administrador crea, edita, elimina y activa/desactiva individualmente cada pregunta. Las preguntas se agrupan por categoría (`group`) y se exponen en la API agrupadas por ese campo (RF-MKT-001).
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
 | `id` | uuid | PK |
+| `group` | varchar(100) | NOT NULL default `General` — categoría visible: `Payments`, `Shipping`, `Returns`, `About GTS`, `Inventory` |
 | `question` | text | NOT NULL |
 | `answer` | text | NOT NULL |
 | `is_active` | boolean | default `true` — `false` = conservada pero no visible en tienda |
-| `sort_order` | int | default 0 |
+| `sort_order` | int | default 0 — orden dentro del grupo |
 | `created_by` | int | FK → users (int — tabla externa CRM) — administrador que la creó |
 | `updated_by` | int | nullable — FK → users (int — tabla externa CRM) — último administrador que la editó |
 | `created_at` | timestamp | NOT NULL |
 | `updated_at` | timestamp | NOT NULL |
+
+> **Índice:** `(group, is_active)` — optimiza `GET /v1/faqs` (todas las activas agrupadas) y `GET /v1/faqs/groups/:group` (grupo específico).
 
 ---
 
@@ -1354,10 +1357,11 @@ erDiagram
 
     faqs {
         uuid        id
+        varchar     group                   "NOT NULL default General — Payments|Shipping|Returns|About GTS|Inventory"
         text        question
         text        answer
         boolean     is_active               "default true"
-        int         sort_order              "default 0"
+        int         sort_order              "default 0 — orden dentro del grupo"
         int         created_by              "int — tabla externa CRM"
         int         updated_by              "nullable — int — tabla externa CRM"
         timestamp   created_at
@@ -1720,6 +1724,8 @@ erDiagram
 - `guest_order_access` es obligatorio para acceso a la orden sin cuenta (RF-PCV-001)
 - `auth_tokens` hash — nunca texto plano (RF-USR-006)
 - `faqs.created_by` / `faqs.updated_by` son `int` (admins CRM), igual que el resto de entidades gestionadas por administradores — no referencian la tabla `users` del e-commerce
+- `faqs.group` agrupa las preguntas por categoría; la API expone `GET /v1/faqs` como lista agrupada `[{ group, faqs[] }]` y `GET /v1/faqs/groups/:group` para un grupo específico por slug (case-insensitive). El índice `(group, is_active)` cubre ambos queries
+- Grupos iniciales (seed): `Payments`, `Shipping`, `Returns`, `About GTS`, `Inventory`
 - `system_config` es la tabla de configuración operativa gestionable desde el panel admin sin cambios en código; valor inicial `max_addresses_per_user = 20` (RF-USR-002-1)
 
 ### Módulo Infraestructura Async
