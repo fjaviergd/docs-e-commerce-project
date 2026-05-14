@@ -66,12 +66,12 @@ Cuando Angular recibe un `401` con código de token inválido, debe cerrar la se
 
 ### 3.1 Definición
 
-| Campo | Valor |
-|---|---|
-| **Método** | `POST` |
-| **Ruta** | `/api/auth/validate-token` |
+| Campo             | Valor                              |
+| ----------------- | ---------------------------------- |
+| **Método**        | `POST`                             |
+| **Ruta**          | `/api/auth/validate-token`         |
 | **Autenticación** | Header `x-api-key` (ver sección 5) |
-| **Content-Type** | `application/json` |
+| **Content-Type**  | `application/json`                 |
 
 ### 3.2 Request
 
@@ -90,9 +90,9 @@ Content-Type: application/json
 }
 ```
 
-| Campo | Tipo | Requerido | Descripción |
-|---|---|---|---|
-| `token` | `string` | Sí | El JWT del usuario tal como fue emitido por el CRM. Sin el prefijo `Bearer`. |
+| Campo   | Tipo     | Requerido | Descripción                                                                  |
+| ------- | -------- | --------- | ---------------------------------------------------------------------------- |
+| `token` | `string` | Sí        | El JWT del usuario tal como fue emitido por el CRM. Sin el prefijo `Bearer`. |
 
 ### 3.3 Response — Token válido
 
@@ -110,13 +110,13 @@ Content-Type: application/json
 }
 ```
 
-| Campo | Tipo | Descripción |
-|---|---|---|
-| `user.id` | `string` | Identificador único del usuario en el CRM. |
-| `user.email` | `string` | Email del usuario. |
-| `user.firstName` | `string` | Nombre del usuario. |
-| `user.lastName` | `string` | Apellido del usuario. |
-| `user.role` | `string` | Rol asignado al usuario en el CRM. Ver sección 4 para valores válidos. |
+| Campo            | Tipo     | Descripción                                                            |
+| ---------------- | -------- | ---------------------------------------------------------------------- |
+| `user.id`        | `string` | Identificador único del usuario en el CRM.                             |
+| `user.email`     | `string` | Email del usuario.                                                     |
+| `user.firstName` | `string` | Nombre del usuario.                                                    |
+| `user.lastName`  | `string` | Apellido del usuario.                                                  |
+| `user.role`      | `string` | Rol asignado al usuario en el CRM. Ver sección 4 para valores válidos. |
 
 ### 3.4 Response — Token inválido
 
@@ -140,13 +140,13 @@ Cada caso de rechazo retorna su propio HTTP status con el campo `reason` en el b
 { "reason": "not_found" }
 ```
 
-| HTTP Status | `reason` | Descripción |
-|---|---|---|
-| `401` | `invalid_signature` | La firma del token no corresponde — token malformado o manipulado. |
-| `401` | `expired` | El token es criptográficamente válido pero ya expiró. |
-| `401` | `revoked` | El token fue invalidado explícitamente (logout, cambio de contraseña, etc.). |
-| `403` | `user_inactive` | El usuario existe pero está desactivado o suspendido en el CRM. |
-| `404` | `not_found` | El token no corresponde a ningún usuario conocido. |
+| HTTP Status | `reason`            | Descripción                                                                  |
+| ----------- | ------------------- | ---------------------------------------------------------------------------- |
+| `401`       | `invalid_signature` | La firma del token no corresponde — token malformado o manipulado.           |
+| `401`       | `expired`           | El token es criptográficamente válido pero ya expiró.                        |
+| `401`       | `revoked`           | El token fue invalidado explícitamente (logout, cambio de contraseña, etc.). |
+| `403`       | `user_inactive`     | El usuario existe pero está desactivado o suspendido en el CRM.              |
+| `404`       | `not_found`         | El token no corresponde a ningún usuario conocido.                           |
 
 ### 3.5 Response — Sin API Key o API Key inválida
 
@@ -165,12 +165,12 @@ Cada caso de rechazo retorna su propio HTTP status con el campo `reason` en el b
 
 NestJS utilizará el rol devuelto en `user.role` para autorizar operaciones específicas del eCommerce. Se espera que el campo contenga uno de los siguientes valores (en mayúsculas):
 
-| Rol | Acceso esperado en eCommerce |
-|---|---|
+| Rol             | Acceso esperado en eCommerce                                                   |
+| --------------- | ------------------------------------------------------------------------------ |
 | `ADMINISTRATOR` | Acceso total, incluyendo configuración global (precios, descuentos, carriers). |
-| `MANAGER` | Gestión de listings, órdenes, clientes, inventario, FAQ. |
-| `SALESREP` | Gestión de órdenes y clientes. |
-| `PURCHASINGREP` | Gestión de inventario y listings. |
+| `MANAGER`       | Gestión de listings, órdenes, clientes, inventario, FAQ.                       |
+| `SALESREP`      | Gestión de órdenes y clientes.                                                 |
+| `PURCHASINGREP` | Gestión de inventario y listings.                                              |
 
 > Si en el futuro se agregan roles nuevos, notificar al equipo de NestJS para actualizar las reglas de autorización.
 
@@ -203,11 +203,11 @@ PHP debe validar las siguientes condiciones **en este orden** y retornar el prim
 
 ## 7. SLA y consideraciones de rendimiento
 
-| Métrica | Requerimiento |
-|---|---|
-| **Tiempo de respuesta p95** | < 200ms |
-| **Tiempo de respuesta p99** | < 500ms |
-| **Disponibilidad** | Igual o mayor a la del CRM API existente |
+| Métrica                     | Requerimiento                            |
+| --------------------------- | ---------------------------------------- |
+| **Tiempo de respuesta p95** | < 200ms                                  |
+| **Tiempo de respuesta p99** | < 500ms                                  |
+| **Disponibilidad**          | Igual o mayor a la del CRM API existente |
 
 ---
 
@@ -306,6 +306,6 @@ Por ahora no es necesario. Si en el futuro cambia el contrato de respuesta, coor
 
 ## 10. Contacto y coordinación
 
-Para preguntas sobre este requerimiento o para coordinar la variable `CRM_API_KEY` que usarán ambos sistemas en desarrollo, contactar al equipo de backend eCommerce.
+Para preguntas sobre este requerimiento o para coordinar la variable `SERVICE_API_KEY` que usarán ambos sistemas en desarrollo, contactar al equipo de backend eCommerce.
 
 Antes de desplegar el endpoint en staging (pruebas), favor compartir la URL base del CRM API para configurar las variables de entorno en el ambiente de NestJS.
