@@ -406,6 +406,7 @@ CREATE TYPE commerce.saga_status_enum           AS ENUM (
     'succeeded', 'compensating', 'compensated', 'failed'
 );
 CREATE TYPE commerce.order_history_source_enum  AS ENUM ('admin', 'system', 'shipengine_webhook');
+CREATE TYPE commerce.push_browser_enum          AS ENUM ('chrome', 'firefox', 'safari', 'edge', 'other');
 ```
 
 #### Tablas
@@ -470,6 +471,8 @@ CREATE TABLE commerce.user_addresses (
 -- commerce.user_notification_preferences
 -- Una fila por usuario. email_security NO puede desactivarse desde
 -- la UI — protege tokens de verificación y reset de contraseña.
+-- No existe push_security — las notificaciones de seguridad son
+-- exclusivamente por email.
 -- -------------------------------------------------------------------
 CREATE TABLE commerce.user_notification_preferences (
     id                      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -478,8 +481,35 @@ CREATE TABLE commerce.user_notification_preferences (
     email_shipping_updates  BOOLEAN     NOT NULL DEFAULT TRUE,
     email_marketing         BOOLEAN     NOT NULL DEFAULT FALSE,
     email_security          BOOLEAN     NOT NULL DEFAULT TRUE,
+    push_order_updates      BOOLEAN     NOT NULL DEFAULT TRUE,
+    push_shipping_updates   BOOLEAN     NOT NULL DEFAULT TRUE,
+    push_marketing          BOOLEAN     NOT NULL DEFAULT FALSE,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- -------------------------------------------------------------------
+-- commerce.user_push_subscriptions
+-- Suscripciones Web Push del usuario por browser (PWA).
+-- endpoint: URL del push service del browser — UNIQUE, varía por
+--   browser/dispositivo. Chrome → FCM, Firefox → Mozilla Push, etc.
+-- p256dh: clave pública de cifrado de la PushSubscription.
+-- auth: secreto de autenticación de la PushSubscription.
+-- El backend usa la librería web-push (VAPID) para enviar al endpoint.
+-- is_active = FALSE cuando el push service retorna HTTP 410 Gone
+--   (suscripción expirada o revocada por el usuario).
+-- -------------------------------------------------------------------
+CREATE TABLE commerce.user_push_subscriptions (
+    id              UUID                            PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID                            NOT NULL REFERENCES commerce.users(id) ON DELETE CASCADE,
+    endpoint        TEXT                            NOT NULL UNIQUE,
+    p256dh          TEXT                            NOT NULL,
+    auth            TEXT                            NOT NULL,
+    browser         commerce.push_browser_enum      NOT NULL DEFAULT 'other',
+    is_active       BOOLEAN                         NOT NULL DEFAULT TRUE,
+    last_used_at    TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ                     NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ                     NOT NULL DEFAULT NOW()
 );
 
 -- -------------------------------------------------------------------
@@ -797,11 +827,14 @@ CREATE TABLE commerce.system_config (
 #### Tipos enum
 
 ```sql
-CREATE TYPE infra.outbox_status_enum    AS ENUM ('pending', 'processing', 'published', 'failed');
-CREATE TYPE infra.webhook_status_enum   AS ENUM ('received', 'processing', 'processed', 'failed', 'ignored');
-CREATE TYPE infra.notif_channel_enum    AS ENUM ('email', 'sms', 'push');
-CREATE TYPE infra.recipient_type_enum   AS ENUM ('registered_user', 'guest');
-CREATE TYPE infra.delivery_status_enum  AS ENUM ('pending', 'sending', 'delivered', 'failed', 'bounced');
+CREATE TYPE infra.outbox_status_enum        AS ENUM ('pending', 'processing', 'published', 'failed');
+CREATE TYPE infra.webhook_status_enum       AS ENUM ('received', 'processing', 'processed', 'failed', 'ignored');
+CREATE TYPE infra.notif_channel_enum        AS ENUM ('email', 'sms', 'push');
+CREATE TYPE infra.recipient_type_enum       AS ENUM ('registered_user', 'guest');
+CREATE TYPE infra.delivery_status_enum      AS ENUM ('pending', 'sending', 'delivered', 'failed', 'bounced');
+CREATE TYPE infra.push_notif_type_enum      AS ENUM (
+    'order_update', 'shipping_update', 'promotion', 'restock', 'system'
+);
 ```
 
 #### Tablas
@@ -919,6 +952,27 @@ CREATE TABLE infra.notification_deliveries (
 );
 
 -- -------------------------------------------------------------------
+-- infra.user_notifications
+-- Inbox de notificaciones del usuario visible en la app (bell icon).
+-- Separado de notification_deliveries (log del sistema).
+-- Solo aplica a usuarios registrados — guests no tienen inbox.
+-- La única mutación posible es marcar como leída: is_read + read_at.
+-- Sin updated_at ni soft delete — se eliminan por TTL o acción del usuario.
+-- -------------------------------------------------------------------
+CREATE TABLE infra.user_notifications (
+    id              UUID                        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID                        NOT NULL REFERENCES commerce.users(id) ON DELETE CASCADE,
+    type            infra.push_notif_type_enum  NOT NULL,
+    title           VARCHAR(255)                NOT NULL,
+    body            TEXT                        NOT NULL,
+    reference_type  VARCHAR(50),
+    reference_id    UUID,
+    is_read         BOOLEAN                     NOT NULL DEFAULT FALSE,
+    read_at         TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ                 NOT NULL DEFAULT NOW()
+);
+
+-- -------------------------------------------------------------------
 -- infra.idempotency_keys
 -- Respaldo durable en PostgreSQL de las claves de idempotencia que
 -- Redis mantiene en memoria. Si Redis se reinicia, evita doble orden
@@ -1008,6 +1062,14 @@ CREATE INDEX idx_notif_deliveries_user    ON infra.notification_deliveries (reci
 CREATE INDEX idx_notif_deliveries_status  ON infra.notification_deliveries (status)
     WHERE status IN ('pending', 'failed');
 
+CREATE INDEX idx_push_subs_user           ON commerce.user_push_subscriptions (user_id)
+    WHERE is_active = TRUE;
+CREATE INDEX idx_push_subs_endpoint       ON commerce.user_push_subscriptions (endpoint);
+
+CREATE INDEX idx_user_notifications_user  ON infra.user_notifications (user_id, created_at DESC);
+CREATE INDEX idx_user_notifications_unread ON infra.user_notifications (user_id, is_read)
+    WHERE is_read = FALSE;
+
 CREATE INDEX idx_idempotency_expires      ON infra.idempotency_keys (expires_at);
 ```
 
@@ -1058,7 +1120,24 @@ VALUES
     ('stock_conflict_alert', 'Alerta de conflicto de stock (admin)', 'email',
      'Stock conflict detected — Order {{visible_order_id}}',
      '<p>Placeholder — reemplazar con template HTML final</p>',
-     '[{"name":"visible_order_id","required":true},{"name":"listing_title","required":true}]');
+     '[{"name":"visible_order_id","required":true},{"name":"listing_title","required":true}]'),
+
+-- Templates de notificación push (PWA — Web Push Protocol)
+-- body_html almacena el cuerpo corto; el browser renderiza la UI de notificación.
+    ('push_order_confirmed', 'Order Confirmed (Push)', 'push',
+     'Your order {{order_id}} is confirmed',
+     'GreenTek Solutions received your order. We will notify you when it ships.',
+     '[{"name":"order_id","required":true},{"name":"customer_first_name","required":true}]'),
+
+    ('push_order_shipped', 'Order Shipped (Push)', 'push',
+     'Your order {{order_id}} is on its way',
+     'Your package has been shipped. Tap to see tracking details.',
+     '[{"name":"order_id","required":true},{"name":"tracking_number","required":false}]'),
+
+    ('push_order_delivered', 'Order Delivered (Push)', 'push',
+     'Your order {{order_id}} has been delivered',
+     'Your package was delivered. Enjoy your purchase!',
+     '[{"name":"order_id","required":true}]');
 ```
 
 ---

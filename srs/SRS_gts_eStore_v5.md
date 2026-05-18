@@ -115,7 +115,7 @@ El sistema es una plataforma web independiente que se integra con los sistemas e
 - Proceso de compra completo para clientes B2C (registrados e invitados)
 - Cotización y gestión de envíos vía ShipEngine
 - Sincronización de inventario con CRM y eBay (automatización parcial desde V1 via Order Notifications API de eBay; el alcance exacto se confirma con el equipo de desarrollo)
-- Ciclo de notificaciones al cliente: comprobante inmediato al pagar, actualizaciones de estado por email con link de seguimiento
+- Ciclo de notificaciones al cliente: comprobante inmediato al pagar, actualizaciones de estado por email y notificaciones push en la app
 - Panel administrativo dentro del CRM para gestión operativa diaria
 
 ### 2.3 Tipos de usuario
@@ -1602,20 +1602,22 @@ El cliente podrá optar por agregar seguro de envío a su pedido durante el chec
 | **Precondiciones** | Orden creada o actualizada |
 
 **Descripción:**
-El sistema enviará notificaciones por email a los clientes en eventos clave del ciclo de vida de la orden.
+El sistema enviará notificaciones a los clientes por **email** y **push** en eventos clave del ciclo de vida de la orden. Los usuarios registrados que hayan aceptado notificaciones push en el browser recibirán ambos canales simultáneamente; los guests reciben únicamente email.
 
 **Eventos con notificación automática:**
 
-| Evento | Contenido clave |
-|---|---|
-| Compra confirmada (pago exitoso) | Comprobante de compra: número de orden (`GTS-YYYY-SO_ID`), productos, montos desglosados (subtotal, envío, impuesto, total), dirección de envío, link de acceso al detalle de la orden, link para descargar el PDF del comprobante |
-| Orden enviada (por shipment) | Se envía **un email por cada shipment** cuando su label es generada. Incluye: número de tracking del shipment, enlace al sitio del carrier, bodega de origen, productos incluidos en ese shipment |
-| Orden entregada | Confirmación de entrega, recordatorio de política de devoluciones y garantía (30 días para devolución; hasta 1 año para garantía) |
+| Evento | Canal email | Canal push |
+|---|---|---|
+| Compra confirmada (pago exitoso) | Comprobante de compra: número de orden (`GTS-YYYY-SO_ID`), productos, montos desglosados (subtotal, envío, impuesto, total), dirección de envío, link al detalle de la orden, link para descargar PDF | Alerta corta: "Your order is confirmed" con link a la orden |
+| Orden enviada (por shipment) | Se envía **un email por cada shipment** cuando su label es generada. Incluye: número de tracking del shipment, enlace al sitio del carrier, bodega de origen, productos incluidos en ese shipment | Alerta corta: "Your package is on its way" con número de tracking |
+| Orden entregada | Confirmación de entrega, recordatorio de política de devoluciones y garantía (30 días para devolución; hasta 1 año para garantía) | Alerta corta: "Your order has been delivered" |
 
 > **Nota:** Las facturas fiscales no son generadas ni enviadas por el e-commerce. Si el cliente requiere su factura, debe solicitarla a GreenTek directamente por email o teléfono.
 
+> **Nota push:** Las notificaciones push solo se envían a usuarios registrados con suscripción activa y `push_order_updates = true` en sus preferencias. El usuario puede gestionar sus preferencias de push desde su perfil.
+
 **Extensiones futuras:**
-- Notificación de restock de producto agotado
+- Notificación de restock de producto agotado (email + push)
 - Notificación de cambio de precio en producto en carrito
 
 ---
@@ -1647,6 +1649,37 @@ El sistema notificará a los administradores cuando el stock de un producto lleg
 
 **Descripción:**
 Los usuarios podrán suscribirse para recibir una notificación cuando un producto agotado vuelva a tener stock disponible.
+
+---
+
+#### RF-NOT-004 — Notificaciones Push
+
+| Campo | Valor |
+|---|---|
+| **Módulo** | Notificaciones |
+| **Versión** | V1 |
+| **Actores** | Sistema, Cliente registrado |
+| **Precondiciones** | Usuario registrado con sesión activa en la app; browser compatible con Web Push API |
+
+**Descripción:**
+La app (Next.js) permite a los usuarios registrados recibir notificaciones push en el browser mediante el protocolo **Web Push + VAPID** (RFC 8030). La app registra un Service Worker que recibe los push events en background — no requiere que la app sea instalable ni tenga capacidades offline. El backend usa la librería `web-push` para entregar al endpoint del push service del browser (Chrome, Firefox, Safari, Edge). No se requiere integración directa con FCM u otro proveedor — el protocolo es estándar W3C.
+
+**Requerimientos funcionales:**
+
+- RF-NOT-004-1: La app debe solicitar permiso de notificaciones push al usuario registrado al iniciar sesión (solo si el browser soporta la Web Push API y el usuario no ha respondido aún)
+- RF-NOT-004-2: Al aceptar el permiso, el browser genera una `PushSubscription` (`endpoint`, `p256dh`, `auth`) que la app envía al backend vía `POST /api/v1/users/me/push-subscriptions`
+- RF-NOT-004-3: Un usuario puede tener múltiples suscripciones activas (varios browsers o dispositivos)
+- RF-NOT-004-4: El sistema debe enviar notificaciones push en los mismos 3 eventos del ciclo de vida definidos en RF-NOT-001
+- RF-NOT-004-5: El usuario puede gestionar sus preferencias de push desde su perfil (`push_order_updates`, `push_shipping_updates`, `push_marketing`). Si una preferencia está deshabilitada, el PushWorker omite el envío para ese tipo de evento
+- RF-NOT-004-6: El inbox de notificaciones en la app muestra las notificaciones recibidas con estado leído/no leído. El usuario puede marcar notificaciones como leídas individualmente
+- RF-NOT-004-7: Cuando el push service retorna HTTP 410 Gone (suscripción expirada o revocada), el backend debe marcar la suscripción como inactiva (`is_active = false`). La app re-registra la suscripción al detectar que el permiso sigue activo
+
+**Reglas de negocio:**
+
+- RN-1: Las notificaciones push son exclusivamente para usuarios registrados — guests no pueden suscribirse
+- RN-2: No existe `push_security` — las notificaciones de seguridad (verificación de email, reset de contraseña) son exclusivamente por email
+- RN-3: El PushWorker respeta las preferencias del usuario; si `push_order_updates = false`, no se envía push al confirmar la orden aunque el usuario tenga suscripciones activas
+- RN-4: Las notificaciones push son complementarias al email — ambos canales se disparan en los mismos eventos. El email no se omite si el push falla
 
 ---
 
@@ -2052,6 +2085,7 @@ Ver documento completo: `propuesta_wholesale.md`
 | **Stripe** | Procesamiento de pagos: tarjetas, Apple Pay, Google Pay | V1 | Confirmado — pendiente integración técnica |
 | **CRM interno GreenTek** | Inventario (`inventory`, `locations`), configuración de carriers, impuestos, órdenes (`so_info`) | V1 | V1: integración vía API del CRM |
 | **Email transaccional** | Notificaciones al cliente (comprobante, estado de orden, tracking). Dev: Gmail SMTP. Producción: AWS SES o SendGrid. Módulo desacoplado del proveedor. | V1 | Pendiente configurar |
+| **Web Push / VAPID** | Notificaciones push en la app Next.js. Protocolo estándar W3C (RFC 8030) — requiere un Service Worker en el frontend para recibir eventos en background. Backend usa librería `web-push` (npm). No requiere cuenta de vendor — el browser enruta al push service correspondiente (Chrome → FCM, Firefox → Mozilla Push, Safari → APNs). | V1 | Pendiente configurar (generar par de claves VAPID) |
 | **Google Analytics / Meta Pixel** | Analytics y tracking de campañas | Futura | Versión futura |
 | **Email marketing (Mailchimp/Klaviyo)** | Newsletters y campañas | Futura | Versión futura |
 | **Amazon / Walmart** | Publicación multicanal futura | Futura | Futuro |

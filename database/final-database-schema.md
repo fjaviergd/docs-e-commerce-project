@@ -813,6 +813,25 @@ Gestión de tokens para verificación de email y recuperación de contraseña (R
 
 ---
 
+### `user_push_subscriptions` — Suscripciones Web Push por browser (PWA)
+
+Almacena las suscripciones push generadas por el browser de cada usuario registrado. El PushWorker consulta esta tabla para saber a qué endpoints entregar. Un usuario puede tener múltiples suscripciones (varios browsers o dispositivos). Usa el protocolo Web Push + VAPID — no requiere SDK de vendor específico.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `user_id` | uuid | FK → `users.id` NOT NULL |
+| `endpoint` | text | UNIQUE NOT NULL — URL del push service del browser (Chrome, Firefox, Safari, Edge) |
+| `p256dh` | text | NOT NULL — clave pública de cifrado de la PushSubscription |
+| `auth` | text | NOT NULL — secreto de autenticación de la PushSubscription |
+| `browser` | enum | NOT NULL default `other` — `chrome \| firefox \| safari \| edge \| other` |
+| `is_active` | boolean | NOT NULL default `true` — `false` cuando el push service retorna 410 Gone (suscripción expirada o revocada) |
+| `last_used_at` | timestamp | nullable — último envío exitoso a este endpoint |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+
+---
+
 ### `orders` — Órdenes de compra
 
 Representa la orden de compra. Funciona para usuarios registrados y guest. Almacena snapshot completo del cliente y montos históricos para integridad contable (RF-ORD-001).
@@ -1024,6 +1043,9 @@ Opt-in/out por tipo de notificación para usuarios registrados. El campo `email_
 | `email_shipping_updates` | boolean | NOT NULL default `true` — tracking, entrega |
 | `email_marketing` | boolean | NOT NULL default `false` — promociones y newsletters |
 | `email_security` | boolean | NOT NULL default `true` — verificación de email, reset de contraseña. **No desactivable por el usuario** |
+| `push_order_updates` | boolean | NOT NULL default `true` — notificación push de confirmación de orden y cambios de estado |
+| `push_shipping_updates` | boolean | NOT NULL default `true` — notificación push de tracking y entrega |
+| `push_marketing` | boolean | NOT NULL default `false` — notificaciones push de promociones |
 | `created_at` | timestamp | NOT NULL |
 | `updated_at` | timestamp | NOT NULL |
 
@@ -1155,6 +1177,22 @@ erDiagram
         boolean     email_shipping_updates  "default true"
         boolean     email_marketing         "default false"
         boolean     email_security          "default true — no desactivable"
+        boolean     push_order_updates      "default true"
+        boolean     push_shipping_updates   "default true"
+        boolean     push_marketing          "default false"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    user_push_subscriptions {
+        uuid        id
+        uuid        user_id                 "FK → users"
+        text        endpoint                "UNIQUE NOT NULL — URL del push service del browser"
+        text        p256dh                  "NOT NULL — clave pública de cifrado"
+        text        auth                    "NOT NULL — secreto de autenticación"
+        enum        browser                 "chrome|firefox|safari|edge|other"
+        boolean     is_active               "default true — false si push service retorna 410"
+        timestamp   last_used_at            "nullable"
         timestamp   created_at
         timestamp   updated_at
     }
@@ -1383,6 +1421,7 @@ erDiagram
     users               ||--o{   orders                          : "órdenes como registrado"
     users               ||--o{   auth_tokens                     : "tokens de verificación"
     users               ||--o|   user_notification_preferences   : "preferencias de notificación"
+    users               ||--o{   user_push_subscriptions         : "suscripciones push por browser"
 
     carts               ||--o{   cart_items                      : "productos en el carrito"
 
@@ -1554,6 +1593,27 @@ Cada intento de envío del `EmailWorker` genera una fila. Permite retry de notif
 
 ---
 
+### `user_notifications` — Inbox de notificaciones en la app
+
+Almacena cada notificación entregada al usuario, visible en el centro de notificaciones de la app (bell icon). Es el inbox del usuario — distinto a `notification_deliveries`, que es el log de auditoría del sistema. Solo aplica a usuarios registrados; los guests no tienen inbox en la app.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `user_id` | uuid | FK → `users.id` NOT NULL |
+| `type` | enum | NOT NULL — `order_update \| shipping_update \| promotion \| restock \| system` |
+| `title` | varchar(255) | NOT NULL — título corto de la notificación |
+| `body` | text | NOT NULL — cuerpo de la notificación |
+| `reference_type` | varchar(50) | nullable — entidad relacionada: `order \| listing` |
+| `reference_id` | uuid | nullable — ID de la entidad relacionada |
+| `is_read` | boolean | NOT NULL default `false` |
+| `read_at` | timestamp | nullable — momento en que el usuario marcó como leída |
+| `created_at` | timestamp | NOT NULL |
+
+Sin `updated_at` — la única mutación posible es marcar como leída, cubierta por `is_read` + `read_at`. Sin soft delete — se eliminan por TTL o acción del usuario.
+
+---
+
 ### `idempotency_keys` — Idempotencia durable para operaciones críticas
 
 Respaldo en PostgreSQL de las claves de idempotencia que Redis mantiene en memoria. Si Redis se reinicia y pierde las claves, esta tabla evita que un resubmit del cliente (ej. doble-click en "Confirmar compra") cree una segunda orden o un segundo cobro.
@@ -1680,6 +1740,19 @@ erDiagram
         timestamp   updated_at
     }
 
+    user_notifications {
+        uuid        id
+        uuid        user_id                 "FK → users (cross-schema)"
+        enum        type                    "order_update|shipping_update|promotion|restock|system"
+        varchar     title                   "NOT NULL"
+        text        body                    "NOT NULL"
+        varchar     reference_type          "nullable order|listing"
+        uuid        reference_id            "nullable"
+        boolean     is_read                 "default false"
+        timestamp   read_at                 "nullable"
+        timestamp   created_at
+    }
+
     idempotency_keys {
         uuid        id
         varchar     key                     "UNIQUE — header Idempotency-Key"
@@ -1696,6 +1769,8 @@ erDiagram
     payment_intents         ||--o{   payment_intent_events           : "historial del intent (append-only)"
     notification_templates  ||--o{   notification_deliveries         : "entregas usando esta plantilla"
 ```
+
+> **Nota cross-schema:** `infra.user_notifications.user_id` referencia `commerce.users.id`. La FK se declara como constraint en el DDL (no como referencia lógica) dado que el schema `infra` ya tiene FKs declaradas hacia `commerce` (ver `notification_deliveries.recipient_user_id`).
 
 ---
 
@@ -1720,7 +1795,8 @@ erDiagram
 - `order_status_history` es append-only — cubre actualizaciones del admin y webhooks de ShipEngine
 - `inventory_reservations` mantiene el stock reservado durante el Saga; auto-expira si el checkout no completa
 - `saga_instances` persiste el estado del Saga Orchestrator para recuperación tras crashes
-- `user_notification_preferences.email_security` no puede desactivarse desde la UI — protege tokens críticos
+- `user_notification_preferences.email_security` no puede desactivarse desde la UI — protege tokens críticos. No existe `push_security` — las notificaciones de seguridad son exclusivamente por email
+- `user_push_subscriptions.endpoint` es UNIQUE — el mismo browser en el mismo dispositivo siempre genera el mismo endpoint; `is_active = false` cuando el push service retorna HTTP 410 Gone (suscripción expirada o revocada por el usuario)
 - `guest_order_access` es obligatorio para acceso a la orden sin cuenta (RF-PCV-001)
 - `auth_tokens` hash — nunca texto plano (RF-USR-006)
 - `faqs.created_by` / `faqs.updated_by` son `int` (admins CRM), igual que el resto de entidades gestionadas por administradores — no referencian la tabla `users` del e-commerce
@@ -1732,7 +1808,8 @@ erDiagram
 - `outbox_events` se escribe en la **misma transacción** que el cambio de negocio — garantía at-least-once hacia BullMQ
 - `webhook_events` `UNIQUE (provider, provider_event_id)` — idempotencia de webhooks; doble-delivery = segundo insert falla silenciosamente
 - `payment_intent_events` append-only — traza cada transición de estado del pago con el evento de webhook que la originó
-- `notification_deliveries` permite retry del `EmailWorker`, detección de bounces y auditoría de entregas por orden/usuario
+- `notification_deliveries` permite retry del `EmailWorker` y `PushWorker`, detección de bounces y auditoría de entregas por orden/usuario
+- `user_notifications` es el inbox del usuario visible en la app — separado de `notification_deliveries` que es log del sistema. Sin `updated_at` ni soft delete; la única mutación es `is_read = TRUE` + `read_at`
 - `idempotency_keys` respaldo durable de Redis — si Redis se pierde, evita doble orden o doble cobro en resubmits
 - `outbox_events` no tiene FKs a las entidades de negocio — `aggregate_id` es una referencia lógica por diseño (el polling worker no necesita JOIN, solo el payload)
 - Tablas append-only (`payment_intent_events`, `order_status_history`, `listing_stock_movements`, `price_config_history`): **nunca se actualiza ni borra ninguna fila**
