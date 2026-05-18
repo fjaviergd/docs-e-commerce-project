@@ -23,10 +23,10 @@ Estos endpoints no existen en la API actual del CRM. Este documento especifica e
 Todas las solicitudes del sistema e-commerce al CRM incluyen un encabezado con una clave API estática:
 
 ```
-x-api-key: <CRM_API_KEY>
+x-api-key: <SERVICE_API_KEY>
 ```
 
-El valor de la clave se acuerda fuera de banda y se configura como variable de entorno en el lado del e-commerce (`CRM_API_KEY`). Las solicitudes sin este encabezado, o con una clave inválida, deben retornar `401 Unauthorized`.
+El valor de la clave se acuerda fuera de banda y se configura como variable de entorno en el lado del e-commerce (`SERVICE_API_KEY`). Las solicitudes sin este encabezado, o con una clave inválida, deben retornar `401 Unauthorized`.
 
 ---
 
@@ -35,6 +35,7 @@ El valor de la clave se acuerda fuera de banda y se configura como variable de e
 El sistema e-commerce se configura mediante la variable de entorno `CRM_API_URL`. Todas las rutas a continuación son relativas a esa URL base.
 
 Ejemplo: si `CRM_API_URL = https://www.greenteksolutions.com/web`, entonces la URL completa para el endpoint 1 es:
+
 ```
 POST https://www.greenteksolutions.com/web/api/auth/login
 ```
@@ -50,7 +51,7 @@ POST https://www.greenteksolutions.com/web/api/auth/login
 ```
 POST /api/auth/login
 Content-Type: application/json
-x-api-key: <CRM_API_KEY>
+x-api-key: <SERVICE_API_KEY>
 ```
 
 **Cuerpo de la solicitud:**
@@ -74,34 +75,35 @@ x-api-key: <CRM_API_KEY>
 }
 ```
 
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | `integer` | ID único del usuario en el CRM. Se usa como el claim `sub` en el JWT emitido por el sistema e-commerce. |
-| `email` | `string` | Debe coincidir con el email enviado en la solicitud. |
-| `firstName` | `string` | Se usa para visualización en la interfaz del backoffice. |
-| `lastName` | `string` | Se usa para visualización en la interfaz del backoffice. |
-| `roles` | `string[]` | Uno o más roles. Ver valores válidos a continuación. |
+| Campo       | Tipo       | Descripción                                                                                             |
+| ----------- | ---------- | ------------------------------------------------------------------------------------------------------- |
+| `id`        | `integer`  | ID único del usuario en el CRM. Se usa como el claim `sub` en el JWT emitido por el sistema e-commerce. |
+| `email`     | `string`   | Debe coincidir con el email enviado en la solicitud.                                                    |
+| `firstName` | `string`   | Se usa para visualización en la interfaz del backoffice.                                                |
+| `lastName`  | `string`   | Se usa para visualización en la interfaz del backoffice.                                                |
+| `roles`     | `string[]` | Uno o más roles. Ver valores válidos a continuación.                                                    |
 
 **Valores de rol válidos:**
 
-| Valor | Descripción |
-|-------|-------------|
+| Valor           | Descripción                                        |
+| --------------- | -------------------------------------------------- |
 | `ADMINISTRATOR` | Acceso completo a todos los módulos del backoffice |
-| `MANAGER` | Acceso a pedidos, listados e inventario |
-| `PURCHASINGREP` | Acceso a los módulos de compras e inventario |
-| `SALESREP` | Acceso a los módulos de pedidos y clientes |
+| `MANAGER`       | Acceso a pedidos, listados e inventario            |
+| `PURCHASINGREP` | Acceso a los módulos de compras e inventario       |
+| `SALESREP`      | Acceso a los módulos de pedidos y clientes         |
 
 > Los strings de rol son **sensibles a mayúsculas**. El sistema e-commerce los compara exactamente como son retornados. Utilice los valores en mayúsculas indicados arriba.
 
 **Respuestas de error:**
 
-| Código HTTP | Cuándo |
-|-------------|--------|
-| `401 Unauthorized` | Credenciales inválidas (contraseña incorrecta o email no encontrado) |
-| `401 Unauthorized` | Encabezado `x-api-key` ausente o inválido |
-| `5xx` | Cualquier error del lado del servidor (el e-commerce mostrará "servicio no disponible" al usuario) |
+| Código HTTP        | Cuándo                                                                                             |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| `401 Unauthorized` | Credenciales inválidas (contraseña incorrecta o email no encontrado)                               |
+| `401 Unauthorized` | Encabezado `x-api-key` ausente o inválido                                                          |
+| `5xx`              | Cualquier error del lado del servidor (el e-commerce mostrará "servicio no disponible" al usuario) |
 
 **Notas:**
+
 - **No** retornar `200` con un payload de error ante un login fallido. El sistema e-commerce solo verifica códigos de estado HTTP.
 - El sistema e-commerce **no** crea sesiones en el lado del CRM. Esta es una verificación de credenciales sin estado.
 - El sistema e-commerce emite su propio JWT después de que esta llamada sea exitosa. Las solicitudes posteriores del administrador van directamente a la API e-commerce con ese JWT — no se realizan más llamadas al CRM por solicitud.
@@ -115,7 +117,7 @@ x-api-key: <CRM_API_KEY>
 ```
 POST /api/customers/link/initiate
 Content-Type: application/json
-x-api-key: <CRM_API_KEY>
+x-api-key: <SERVICE_API_KEY>
 ```
 
 **Cuerpo de la solicitud:**
@@ -134,13 +136,14 @@ Cuerpo vacío o cualquier cuerpo — el sistema e-commerce ignora el cuerpo de l
 
 **Respuestas de error:**
 
-| Código HTTP | Cuándo |
-|-------------|--------|
-| `401 Unauthorized` | Encabezado `x-api-key` ausente o inválido |
-| `404 Not Found` | *(Opcional)* No se encontró ningún cliente CRM con ese email |
-| `5xx` | Cualquier error del lado del servidor |
+| Código HTTP        | Cuándo                                                       |
+| ------------------ | ------------------------------------------------------------ |
+| `401 Unauthorized` | Encabezado `x-api-key` ausente o inválido                    |
+| `404 Not Found`    | _(Opcional)_ No se encontró ningún cliente CRM con ese email |
+| `5xx`              | Cualquier error del lado del servidor                        |
 
 **Notas:**
+
 - El sistema e-commerce **no** diferencia un `404` ante el usuario. Desde la perspectiva del cliente, si no llega ningún código, simplemente no continúa. Puede optar por retornar `200` de forma silenciosa aunque el email no se encuentre (para evitar exponer la existencia de clientes en el CRM).
 - El código de verificación debe expirar en **10 a 15 minutos**.
 - El mecanismo de entrega del código (plantilla de email, remitente) es responsabilidad del equipo CRM.
@@ -154,7 +157,7 @@ Cuerpo vacío o cualquier cuerpo — el sistema e-commerce ignora el cuerpo de l
 ```
 POST /api/customers/link/verify
 Content-Type: application/json
-x-api-key: <CRM_API_KEY>
+x-api-key: <SERVICE_API_KEY>
 ```
 
 **Cuerpo de la solicitud:**
@@ -174,20 +177,21 @@ x-api-key: <CRM_API_KEY>
 }
 ```
 
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
+| Campo            | Tipo     | Descripción                                                                                                                                                                                  |
+| ---------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `crmReferenceId` | `string` | El identificador interno del CRM para este cliente. Se almacena en la base de datos del e-commerce como referencia — no se interpreta ni se utiliza para realizar más llamadas al CRM en V1. |
 
 **Respuestas de error:**
 
-| Código HTTP | Cuándo |
-|-------------|--------|
-| `400 Bad Request` | El código es incorrecto, ha expirado o ya fue usado |
-| `422 Unprocessable Entity` | Alternativa para código inválido o expirado |
-| `401 Unauthorized` | Encabezado `x-api-key` ausente o inválido |
-| `5xx` | Cualquier error del lado del servidor |
+| Código HTTP                | Cuándo                                              |
+| -------------------------- | --------------------------------------------------- |
+| `400 Bad Request`          | El código es incorrecto, ha expirado o ya fue usado |
+| `422 Unprocessable Entity` | Alternativa para código inválido o expirado         |
+| `401 Unauthorized`         | Encabezado `x-api-key` ausente o inválido           |
+| `5xx`                      | Cualquier error del lado del servidor               |
 
 **Notas:**
+
 - El sistema e-commerce trata tanto `400` como `422` como "código inválido" y retorna una `UnauthorizedException` al cliente.
 - Tras una verificación exitosa, el código debe ser invalidado (uso único).
 
@@ -195,22 +199,22 @@ x-api-key: <CRM_API_KEY>
 
 ## Tabla Resumen
 
-| # | Endpoint | Método | Disparador |
-|---|----------|--------|------------|
-| 1 | `/api/auth/login` | `POST` | El administrador hace clic en "Iniciar sesión" en el backoffice |
-| 2 | `/api/customers/link/initiate` | `POST` | El cliente hace clic en "Vincular mi cuenta CRM" |
-| 3 | `/api/customers/link/verify` | `POST` | El cliente envía el código de verificación |
+| #   | Endpoint                       | Método | Disparador                                                      |
+| --- | ------------------------------ | ------ | --------------------------------------------------------------- |
+| 1   | `/api/auth/login`              | `POST` | El administrador hace clic en "Iniciar sesión" en el backoffice |
+| 2   | `/api/customers/link/initiate` | `POST` | El cliente hace clic en "Vincular mi cuenta CRM"                |
+| 3   | `/api/customers/link/verify`   | `POST` | El cliente envía el código de verificación                      |
 
 ---
 
 ## Requisitos No Funcionales
 
-| Requisito | Valor |
-|-----------|-------|
-| **Timeout** | El sistema e-commerce agota el tiempo de espera tras **5 segundos**. El CRM debe responder dentro de ese margen o el e-commerce retornará `503 Service Unavailable` al usuario. |
-| **Content-Type** | Todas las respuestas deben ser `application/json`. |
-| **HTTPS** | Requerido en producción. La URL del CRM configurada en e-commerce usará `https://`. |
-| **Disponibilidad** | El endpoint 1 (login de administrador) está en la ruta crítica de cada sesión de administrador. Los endpoints 2 y 3 son iniciados por el usuario y menos frecuentes. |
+| Requisito          | Valor                                                                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timeout**        | El sistema e-commerce agota el tiempo de espera tras **5 segundos**. El CRM debe responder dentro de ese margen o el e-commerce retornará `503 Service Unavailable` al usuario. |
+| **Content-Type**   | Todas las respuestas deben ser `application/json`.                                                                                                                              |
+| **HTTPS**          | Requerido en producción. La URL del CRM configurada en e-commerce usará `https://`.                                                                                             |
+| **Disponibilidad** | El endpoint 1 (login de administrador) está en la ruta crítica de cada sesión de administrador. Los endpoints 2 y 3 son iniciados por el usuario y menos frecuentes.            |
 
 ---
 
