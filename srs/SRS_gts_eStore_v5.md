@@ -4,9 +4,9 @@
 | Campo | Valor |
 |---|---|
 | Proyecto | Plataforma E-commerce GreenTek Solutions (gts eStore) |
-| Versión | 5.0 |
+| Versión | 6.0 |
 | Estado | En revisión |
-| Fecha | 2026-04-08 |
+| Fecha | 2026-05-20 |
 | Autor | Javier García, Guadalupe Mendoza|
 | Revisado por | Javier García, Guadalupe Mendoza |
 
@@ -21,6 +21,7 @@
 | 3.0 | 2026-03-24 | | Cierre de todos los puntos de pendientes_v2.md y varios de pendientes_para_devs.md. Cambios principales: pasarela Stripe confirmada con Apple Pay/Google Pay; eliminación de integración QuickBooks (solo comprobante inmediato); definición completa de operación multi-bodega; 3 políticas de envío por listing (Freight/Free/Normal); fallback de ShipEngine con costo fijo por listing; horario laboral y SLA de procesamiento. |
 | 4.0 | 2026-03-27 | | Cierre de pendientes_para_devs_v2.md y pendientes_v3.md. Cambios principales: nuevo RF-USR-006 (registro y autenticación de clientes con vinculación opcional a CRM); reglas del carrito guest (UUID/cookie, expiración 7 días, fusión al login); patrón SAGA para descuento de stock; formato de número de orden (UUID interno + GTS-YYYY-SO_ID visible); cancelación en multi-shipment (cualquier label bloquea toda la orden); proceso de devolución manual; comportamiento de sobreventa (flags en orden y listing); email desacoplado (SMTP dev → AWS SES/SendGrid prod); limpieza total de referencias a QuickBooks/Factura en todo el documento. |
 | 5.0 | 2026-04-08 | | Incorporación de comentarios de stakeholders. Cambios principales: RF-CAT-008 (Bundle/Kit) definido como Futura; RF-INV-002 (sincronización de stock) se explorará automatización desde V1 via Order Notifications API de eBay; adición de módulo de Configuración de Precios en RF-ADM-001 con descripción detallada en RF-PAG-002; nota futura sobre creación de listings sin inventario (RF-CAT-001); nota de live chat como idea pendiente de definición (sección 7.1); nota sobre Bulk Items como concepto a evaluar en versiones futuras (RF-INV-001). |
+| 6.0 | 2026-05-20 | | Adición de RF-ADM-002 — Gestión de Categorías de la GTS Store: CRUD de categorías, campos `icon` (HugeIcons) e `image` para el storefront, gestión de orden vía drag & drop. Actualización del módulo de administración en RF-ADM-001 para incluir Categorías como funcionalidad V1. |
 
 ---
 
@@ -1908,15 +1909,52 @@ El panel administrativo está integrado al CRM existente (Angular). Las interfac
 |---|---|---|
 | Clientes | Ver lista, ver historial de compras, bloquear/desbloquear cuentas | V1 |
 | Listings | Crear, editar, publicar, despublicar, marcar restricciones de envío | V1 |
+| Categorías | Crear, editar, activar/desactivar categorías de la GTS Store. Ver RF-ADM-002 | V1 |
 | Órdenes | Ver listado, filtrar, ver detalle, actualizar estado, agregar tracking, cancelar | V1 |
 | Inventario | Ajustar stock, ver historial de cambios, alertas de sobreventa | V1 |
 | Impuestos | Ver tabla de tasas por estado (configurada en CRM) | V1 |
 | Configuración de precios | Configurar el porcentaje de descuento global por canal (GTS Store, eBay). Solo accesible para el rol Super Administrador. Ver RF-PAG-002 | V1 |
 | Configuración de envíos | Gestionar restricciones de ubicación, carriers habilitados | V1 |
-| FAQ | Crear, editar, eliminar preguntas frecuentes | V1 |
+| FAQ | Crear, editar, eliminar preguntas frecuentes y grupos de FAQs | V1 |
 | Cupones | Crear, editar, activar/desactivar, ver métricas | Futura |
 | Colecciones | Crear, editar, activar/desactivar | Futura |
 | Interacciones | Panel de preguntas y mensajes de clientes | Futura |
+
+---
+
+#### RF-ADM-002 — Gestión de Categorías de la GTS Store
+
+| Campo | Valor |
+|---|---|
+| **Módulo** | Administración |
+| **Versión** | V1 |
+| **Actores** | Administrador, Manager |
+| **Precondiciones** | Administrador autenticado en el CRM |
+
+**Descripción:**
+El administrador puede gestionar el catálogo de categorías de la GTS Store desde el panel administrativo del CRM. Las categorías son entidades planas (sin anidamiento) que agrupan listings para su presentación en el storefront.
+
+**Requerimientos funcionales:**
+
+- RF-ADM-002-1: El sistema debe permitir crear nuevas categorías con nombre, ícono e imagen de portada
+- RF-ADM-002-2: El sistema debe permitir editar el nombre, ícono e imagen de una categoría existente
+- RF-ADM-002-3: El sistema debe permitir activar y desactivar categorías (soft delete — nunca se eliminan para no romper FKs)
+- RF-ADM-002-4: El sistema debe permitir reordenar las categorías mediante una interfaz de drag & drop; el nuevo orden se persiste en el campo `sort_order` de cada registro
+- RF-ADM-002-5: El campo `sort_order` no es editable manualmente — solo se actualiza mediante la acción de reorder
+- RF-ADM-002-6: Las categorías desactivadas no deben ser visibles en el storefront
+
+**Campos de la entidad:**
+
+| Campo | Tipo | Requerido | Descripción |
+|---|---|---|---|
+| `name` | `varchar(100)` | Sí | Nombre visible de la categoría. Ej: `Laptops`, `Desktops` |
+| `icon` | `varchar(100)` | No | Nombre del ícono de la librería **HugeIcons** (free tier) para mostrar junto al nombre en el storefront. Ej: `laptop-01` |
+| `image` | `varchar(500)` | No | URL de imagen de portada para mostrar en la página de categoría del storefront |
+| `isActive` | `boolean` | — | Estado de visibilidad. Se gestiona con toggle, no con eliminación |
+| `sortOrder` | `int` | — | Posición en el listado. Gestionado por el endpoint de reorder, no editable desde el formulario |
+
+**Nota técnica — librería de íconos:**
+Los íconos del storefront usan [HugeIcons](https://hugeicons.com) en su tier gratuito. El campo `icon` almacena únicamente el nombre del ícono (ej. `laptop-01`) — el frontend es responsable de renderizarlo usando el componente o clase correspondiente de la librería.
 
 ---
 

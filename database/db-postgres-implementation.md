@@ -92,6 +92,8 @@ CREATE TABLE catalog.gts_categories (
     name        VARCHAR(100) NOT NULL,
     is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
     sort_order  INT         NOT NULL DEFAULT 0,
+    icon        VARCHAR(100),
+    image       VARCHAR(500),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -1210,7 +1212,9 @@ Categorías planas de la GTS Store (sin anidamiento). Nunca se borran para prese
 | `id` | `uuid` | No | `gen_random_uuid()` | PK |
 | `name` | `varchar(100)` | No | — | Nombre visible en tienda. Ej: `Laptops`, `Desktops` |
 | `is_active` | `boolean` | No | `true` | **Soft delete** — `false` oculta la categoría sin romper FKs |
-| `sort_order` | `int` | No | `0` | Orden de presentación en la tienda |
+| `sort_order` | `int` | No | `0` | Orden de presentación en la tienda. Gestionado vía endpoint de reorder — no se edita manualmente |
+| `icon` | `varchar(100)` | Sí | — | Nombre del ícono de [HugeIcons](https://hugeicons.com) para mostrar junto a la categoría en el storefront |
+| `image` | `varchar(500)` | Sí | — | URL de imagen de portada de la categoría para mostrar en el storefront |
 | `created_at` | `timestamptz` | No | `NOW()` | |
 | `updated_at` | `timestamptz` | No | `NOW()` | |
 

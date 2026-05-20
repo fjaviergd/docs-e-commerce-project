@@ -22,7 +22,9 @@ Categorías planas (sin anidamiento) para agrupar listings en la tienda. No se e
 | `id` | uuid | PK |
 | `name` | varchar | Ej: `Laptops`, `Desktops`, `Phones` |
 | `is_active` | boolean | `false` = desactivada, mantiene FKs |
-| `sort_order` | int | |
+| `sort_order` | int | Orden de presentación. Gestionado vía endpoint de reorder, no editable manualmente |
+| `icon` | varchar(100) | nullable — nombre del ícono de [HugeIcons](https://hugeicons.com) para el storefront |
+| `image` | varchar(500) | nullable — URL de imagen de portada de la categoría para el storefront |
 | `created_at` | timestamp | |
 | `updated_at` | timestamp | |
 
@@ -332,6 +334,8 @@ erDiagram
         varchar     name
         boolean     is_active
         int         sort_order
+        varchar     icon                    "nullable — HugeIcons name"
+        varchar     image                   "nullable — URL imagen de categoría"
         timestamp   created_at
         timestamp   updated_at
     }
