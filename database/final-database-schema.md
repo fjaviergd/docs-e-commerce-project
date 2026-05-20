@@ -1106,14 +1106,35 @@ Parámetros del sistema configurables desde el panel administrativo del CRM por 
 
 ---
 
-### `faqs` — Preguntas frecuentes
+### `faq_groups` — Grupos de preguntas frecuentes
 
-Gestionadas desde el panel administrativo del CRM. El administrador crea, edita, elimina y activa/desactiva individualmente cada pregunta. Las preguntas se agrupan por categoría (`group`) y se exponen en la API agrupadas por ese campo (RF-MKT-001).
+Entidades gestionadas desde el CRM. Permiten crear, editar, reordenar y desactivar grupos de FAQs de forma independiente. Cada grupo tiene un slug único que se usa en las rutas públicas (`GET /v1/faqs/groups/:slug`).
 
 | Columna | Tipo | Notas |
 |---------|------|-------|
 | `id` | uuid | PK |
-| `group` | varchar(100) | NOT NULL default `General` — categoría visible: `Payments`, `Shipping`, `Returns`, `About GTS`, `Inventory` |
+| `name` | varchar(100) | NOT NULL — nombre visible: `Payments`, `Shipping`, `Returns`, `About GTS`, `Inventory` |
+| `slug` | varchar(100) | NOT NULL UNIQUE — identificador URL: `payments`, `shipping`, `returns`, `about-gts`, `inventory` |
+| `description` | text | nullable — descripción corta visible en el panel admin |
+| `sort_order` | int | default 0 — orden de aparición del grupo |
+| `is_active` | boolean | default `true` — `false` = grupo y sus FAQs ocultos en tienda |
+| `created_by` | int | FK → users (int — tabla externa CRM) |
+| `updated_by` | int | nullable — FK → users (int — tabla externa CRM) |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+
+> **Índices:** `slug` (UNIQUE), `(is_active, sort_order)`.
+
+---
+
+### `faqs` — Preguntas frecuentes
+
+Gestionadas desde el panel administrativo del CRM. El administrador crea, edita, elimina y activa/desactiva individualmente cada pregunta. Las preguntas pertenecen a un grupo (`faq_groups`) a través de FK y se exponen en la API agrupadas (RF-MKT-001).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `group_id` | uuid | NOT NULL FK → `faq_groups.id` ON DELETE RESTRICT |
 | `question` | text | NOT NULL |
 | `answer` | text | NOT NULL |
 | `is_active` | boolean | default `true` — `false` = conservada pero no visible en tienda |
@@ -1123,7 +1144,7 @@ Gestionadas desde el panel administrativo del CRM. El administrador crea, edita,
 | `created_at` | timestamp | NOT NULL |
 | `updated_at` | timestamp | NOT NULL |
 
-> **Índice:** `(group, is_active)` — optimiza `GET /v1/faqs` (todas las activas agrupadas) y `GET /v1/faqs/groups/:group` (grupo específico).
+> **Índice:** `(group_id, is_active)` — optimiza `GET /v1/faqs` (todas las activas agrupadas) y `GET /v1/faqs/groups/:slug` (grupo específico).
 
 ---
 
@@ -1799,8 +1820,9 @@ erDiagram
 - `user_push_subscriptions.endpoint` es UNIQUE — el mismo browser en el mismo dispositivo siempre genera el mismo endpoint; `is_active = false` cuando el push service retorna HTTP 410 Gone (suscripción expirada o revocada por el usuario)
 - `guest_order_access` es obligatorio para acceso a la orden sin cuenta (RF-PCV-001)
 - `auth_tokens` hash — nunca texto plano (RF-USR-006)
-- `faqs.created_by` / `faqs.updated_by` son `int` (admins CRM), igual que el resto de entidades gestionadas por administradores — no referencian la tabla `users` del e-commerce
-- `faqs.group` agrupa las preguntas por categoría; la API expone `GET /v1/faqs` como lista agrupada `[{ group, faqs[] }]` y `GET /v1/faqs/groups/:group` para un grupo específico por slug (case-insensitive). El índice `(group, is_active)` cubre ambos queries
+- `faq_groups` es la entidad manejada (CRUD admin) que centraliza los grupos de FAQs; `faqs.group_id` reemplaza al anterior campo libre `group varchar`
+- `faqs.created_by` / `faqs.updated_by` y `faq_groups.created_by` / `faq_groups.updated_by` son `int` (admins CRM) — no referencian la tabla `users` del e-commerce
+- La API pública expone `GET /v1/faqs` como lista agrupada `[{ group, slug, faqs[] }]` y `GET /v1/faqs/groups/:slug` para un grupo específico (case-insensitive). `GET /v1/faq-groups` devuelve la lista de grupos activos para el picker del frontend
 - Grupos iniciales (seed): `Payments`, `Shipping`, `Returns`, `About GTS`, `Inventory`
 - `system_config` es la tabla de configuración operativa gestionable desde el panel admin sin cambios en código; valor inicial `max_addresses_per_user = 20` (RF-USR-002-1)
 

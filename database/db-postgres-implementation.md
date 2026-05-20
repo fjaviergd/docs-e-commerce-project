@@ -787,13 +787,36 @@ CREATE TABLE commerce.guest_order_access (
 );
 
 -- -------------------------------------------------------------------
+-- commerce.faq_groups
+-- Entidades gestionadas (CRUD admin CRM). Cada grupo tiene un slug
+-- único usado en rutas públicas. Los FAQs referencian el grupo por FK.
+-- -------------------------------------------------------------------
+CREATE TABLE commerce.faq_groups (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        VARCHAR(100) NOT NULL,
+    slug        VARCHAR(100) NOT NULL,
+    description TEXT,
+    sort_order  INT          NOT NULL DEFAULT 0,
+    is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_by  INT          NOT NULL,
+    updated_by  INT,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT faq_groups_slug_key UNIQUE (slug)
+);
+
+CREATE INDEX faq_groups_is_active_sort_order_idx ON commerce.faq_groups (is_active, sort_order);
+
+-- -------------------------------------------------------------------
 -- commerce.faqs
 -- Gestionadas por admins del CRM (created_by/updated_by son int CRM,
 -- NO uuids de commerce.users).
+-- group_id: FK a faq_groups — reemplaza el campo libre "group varchar".
 -- is_active = false: conservada pero no visible en tienda.
 -- -------------------------------------------------------------------
 CREATE TABLE commerce.faqs (
     id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id    UUID        NOT NULL REFERENCES commerce.faq_groups(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     question    TEXT        NOT NULL,
     answer      TEXT        NOT NULL,
     is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
@@ -803,6 +826,8 @@ CREATE TABLE commerce.faqs (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX faqs_group_id_is_active_idx ON commerce.faqs (group_id, is_active);
 
 -- -------------------------------------------------------------------
 -- commerce.system_config
@@ -1497,6 +1522,7 @@ Lista negra de ubicaciones de envío configurada por el admin. `is_active = fals
 | `saga_instances` | Estado del Saga Orchestrator por orden | — | No |
 | `order_return_metadata` | Metadata de devolución parcial o total | — | No |
 | `guest_order_access` | Token de acceso seguro para invitados | — | No |
+| `faq_groups` | Grupos de FAQs gestionados por admins CRM | `is_active = false` | No |
 | `faqs` | Preguntas frecuentes gestionadas por admins CRM | `is_active = false` | No |
 | `system_config` | Parámetros operativos configurables sin código | — | No |
 
@@ -1856,17 +1882,37 @@ Token de acceso seguro para que invitados vean su orden via link en el email de 
 
 ---
 
-#### `commerce.faqs`
+#### `commerce.faq_groups`
 
-Preguntas frecuentes gestionadas por admins CRM. `created_by` / `updated_by` son IDs del CRM, no UUIDs de `commerce.users`.
+Grupos de FAQs gestionados por admins CRM. `created_by` / `updated_by` son IDs del CRM, no UUIDs de `commerce.users`.
 
 | Columna | Tipo | Nullable | Default | Descripción |
 |---------|------|----------|---------|-------------|
 | `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `name` | `varchar(100)` | No | — | Nombre visible: `Payments`, `Shipping`, etc. |
+| `slug` | `varchar(100)` | No | — | **UNIQUE** — identificador URL: `payments`, `about-gts`, etc. |
+| `description` | `text` | Sí | — | Descripción corta del grupo |
+| `sort_order` | `int` | No | `0` | Orden de aparición del grupo |
+| `is_active` | `boolean` | No | `true` | **Soft delete** — `false` oculta el grupo y sus FAQs |
+| `created_by` | `int` | No | — | ID admin CRM |
+| `updated_by` | `int` | Sí | — | ID admin CRM |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+
+---
+
+#### `commerce.faqs`
+
+Preguntas frecuentes gestionadas por admins CRM. Referencian un grupo (`faq_groups`) por FK. `created_by` / `updated_by` son IDs del CRM, no UUIDs de `commerce.users`.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `group_id` | `uuid` | No | — | **FK → `faq_groups.id`** ON DELETE RESTRICT |
 | `question` | `text` | No | — | |
 | `answer` | `text` | No | — | |
 | `is_active` | `boolean` | No | `true` | **Soft delete** — `false` oculta en tienda |
-| `sort_order` | `int` | No | `0` | |
+| `sort_order` | `int` | No | `0` | Orden dentro del grupo |
 | `created_by` | `int` | No | — | ID admin CRM |
 | `updated_by` | `int` | Sí | — | ID admin CRM |
 | `created_at` | `timestamptz` | No | `NOW()` | |
