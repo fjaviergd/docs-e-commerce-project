@@ -83,6 +83,31 @@ CREATE TYPE catalog.restriction_type_enum       AS ENUM ('STATE', 'ZIP_CODE', 'C
 
 ```sql
 -- -------------------------------------------------------------------
+-- catalog.listing_conditions
+-- Tabla CMS para los 3 niveles de condición GTS Grade (RF-CAT-009).
+-- Almacena descripción, score y color UI por nivel.
+-- El listing sigue guardando condition como enum; sin FK a esta tabla.
+-- 3 filas fijas seeded — no se crean ni eliminan desde la API.
+-- -------------------------------------------------------------------
+CREATE TABLE catalog.listing_conditions (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    code        VARCHAR(20)  NOT NULL,
+    label       VARCHAR(100) NOT NULL,
+    score       INT          NOT NULL,
+    ui_color    VARCHAR(20)  NOT NULL,
+    description TEXT         NOT NULL,
+    sort_order  INT          NOT NULL DEFAULT 0,
+    is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
+    updated_by  INT,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT listing_conditions_code_key UNIQUE (code)
+);
+
+CREATE INDEX listing_conditions_is_active_sort_order_idx
+    ON catalog.listing_conditions (is_active, sort_order);
+
+-- -------------------------------------------------------------------
 -- catalog.gts_categories
 -- Categorías planas de la GTS Store (no eBay). Se desactivan, nunca
 -- se borran, para no romper FKs existentes.
@@ -1200,6 +1225,26 @@ VALUES
 | `price_config` | Descuento global por canal (vigente) | `deleted_at` | No |
 | `price_config_history` | Historial de cambios de descuento global | — | **Sí** † |
 | `shipping_restrictions` | Lista negra de ubicaciones de envío | `is_active = false` | No |
+
+---
+
+#### `catalog.listing_conditions`
+
+Tabla CMS con los 3 niveles de condición GTS Grade (RF-CAT-009). Contenido editable por admins. `code` es la clave lógica usada en listings (no FK directa — el listing guarda el enum string). Sin `created_by` porque los 3 registros son seeded; no se crean vía API.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `code` | `varchar(20)` | No | — | **UNIQUE** — `EXCELLENT \| GOOD \| FAIR` |
+| `label` | `varchar(100)` | No | — | Etiqueta UI: `Excellent`, `Good`, `Fair` |
+| `score` | `int` | No | — | Puntaje de referencia UI: `95`, `75`, `55` |
+| `ui_color` | `varchar(20)` | No | — | Token de color: `green`, `blue`, `amber` |
+| `description` | `text` | No | — | Descripción resumida del nivel |
+| `sort_order` | `int` | No | `0` | Orden de aparición |
+| `is_active` | `boolean` | No | `true` | **Soft-hide** — `false` oculta en storefront |
+| `updated_by` | `int` | Sí | — | ID admin CRM |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
 
 ---
 
