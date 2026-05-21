@@ -83,6 +83,30 @@ CREATE TYPE catalog.restriction_type_enum       AS ENUM ('STATE', 'ZIP_CODE', 'C
 
 ```sql
 -- -------------------------------------------------------------------
+-- catalog.listing_description_templates
+-- Plantillas de descripción reutilizables gestionadas por admins CRM.
+-- Portado de ecommerce_catalog_descriptions (MySQL legacy DB).
+-- Soporta full CRUD + soft-delete (is_active + deleted_at).
+-- -------------------------------------------------------------------
+CREATE TABLE catalog.listing_description_templates (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        VARCHAR(255) NOT NULL,
+    description TEXT         NOT NULL,
+    is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_by  INT          NOT NULL,
+    updated_by  INT,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at  TIMESTAMPTZ
+);
+
+CREATE INDEX listing_description_templates_is_active_deleted_at_idx
+    ON catalog.listing_description_templates (is_active, deleted_at);
+
+CREATE INDEX listing_description_templates_name_idx
+    ON catalog.listing_description_templates (name);
+
+-- -------------------------------------------------------------------
 -- catalog.listing_conditions
 -- Tabla CMS para los 3 niveles de condición GTS Grade (RF-CAT-009).
 -- Almacena descripción, score y color UI por nivel.
@@ -1225,6 +1249,24 @@ VALUES
 | `price_config` | Descuento global por canal (vigente) | `deleted_at` | No |
 | `price_config_history` | Historial de cambios de descuento global | — | **Sí** † |
 | `shipping_restrictions` | Lista negra de ubicaciones de envío | `is_active = false` | No |
+
+---
+
+#### `catalog.listing_description_templates`
+
+Plantillas de descripción reutilizables gestionadas por admins CRM. Portado de `ecommerce_catalog_descriptions` (MySQL legacy). Soporta soft-delete con timestamp — los registros eliminados pueden restaurarse.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | No | `gen_random_uuid()` | PK |
+| `name` | `varchar(255)` | No | — | Nombre identificador de la plantilla |
+| `description` | `text` | No | — | Texto de descripción a copiar en listings |
+| `is_active` | `boolean` | No | `true` | **Soft-hide** — `false` oculta del selector |
+| `created_by` | `int` | No | — | ID admin CRM que creó la plantilla |
+| `updated_by` | `int` | Sí | — | ID admin CRM que actualizó por última vez |
+| `created_at` | `timestamptz` | No | `NOW()` | |
+| `updated_at` | `timestamptz` | No | `NOW()` | |
+| `deleted_at` | `timestamptz` | Sí | `NULL` | `NULL` = activo; valor = soft-deleted con timestamp |
 
 ---
 
