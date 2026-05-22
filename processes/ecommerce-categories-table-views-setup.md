@@ -54,9 +54,7 @@ VALUES
 
 ## Paso 3 — Permisos por rol
 
-ADMINISTRATOR tiene acceso wildcard, no necesita registros.
-
-Todos los demás roles tienen acceso a todas las columnas del catálogo:
+Todos los roles requieren registros explícitos, **incluyendo ADMINISTRATOR**. El acceso wildcard no se aplica en la práctica para tablas con columnas registradas:
 
 ```sql
 INSERT INTO role_table_column_permission
@@ -68,11 +66,12 @@ SELECT
   NOW()
 FROM table_column_metadata tcm
 CROSS JOIN (
-  SELECT 'MANAGER'               AS role_name UNION ALL
-  SELECT 'PURCHASINGREP'                       UNION ALL
-  SELECT 'SALESREP'                            UNION ALL
-  SELECT 'TECH SUPERVISOR'                     UNION ALL
-  SELECT 'WAREHOUSE SUPERVISOR'                UNION ALL
+  SELECT 'ADMINISTRATOR'         AS role_name UNION ALL
+  SELECT 'MANAGER'                            UNION ALL
+  SELECT 'PURCHASINGREP'                      UNION ALL
+  SELECT 'SALESREP'                           UNION ALL
+  SELECT 'TECH SUPERVISOR'                    UNION ALL
+  SELECT 'WAREHOUSE SUPERVISOR'               UNION ALL
   SELECT 'RECEIVINGDEPARTMENT'
 ) r
 WHERE tcm.id_table_metadata = @table_id;

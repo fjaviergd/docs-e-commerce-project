@@ -148,7 +148,7 @@ VALUES
 
 ### Paso 3 — Otorgar permisos de columna por rol
 
-ADMINISTRATOR tiene acceso wildcard: **no necesita registros aquí**.
+**Todos los roles requieren registros explícitos, incluyendo ADMINISTRATOR.** El acceso wildcard documentado en el código no se aplica en la práctica — si ADMINISTRATOR no tiene registros en esta tabla, el backend rechazará cualquier operación sobre las columnas con 403.
 
 Para cualquier otro rol, insertar los permisos de las columnas que debe ver:
 

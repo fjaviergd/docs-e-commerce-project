@@ -47,6 +47,7 @@ Basarse en `ebay-listings` como referencia. **No modificar el componente de list
 - La lógica de carga de datos (llamada al API)
 - Definición de sus `FilterChipConfig[]` y `ColumnConfig[]`
 - Su propio servicio de API
+- Su propio modal de crear/editar
 
 ---
 
@@ -78,6 +79,18 @@ Ruta: `gtsdashboard/src/app/e-commerce/pages/categories/`
 **tableKey para vistas:** `ecommerce_categories`
 
 **Sort por defecto:** `sortOrder ASC`
+
+**Modal crear/editar — campos del formulario:**
+
+| Campo | Input | Validación |
+|---|---|---|
+| Name | Text | Requerido, max 100 chars |
+| Sort Order | Number | Opcional, min 0, default 0 |
+| Status | Toggle (isActive) | Default activo |
+| Icon | Text | Opcional, nombre del icono (ej: `laptop`) |
+| Image | Text (URL) | Opcional, URL de la imagen de la categoría |
+
+> `icon` e `image` son los campos que los administradores usarán para que el ecommerce renderice visualmente cada categoría en el storefront. El backend ya los soporta en `POST /v1/categories` y `PATCH /v1/categories/:id`.
 
 ---
 
