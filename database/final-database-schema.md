@@ -13,6 +13,50 @@
 
 ---
 
+### `listing_description_templates` — Plantillas de descripción reutilizables
+
+Tabla administrada por admins CRM. Almacena descripciones reutilizables que el editor de listings puede copiar al campo `description` del listing. Soporta soft-delete con timestamp (`deleted_at`).
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `name` | varchar(255) | NOT NULL — nombre identificador de la plantilla |
+| `description` | text | NOT NULL — texto de descripción a copiar en listings |
+| `is_active` | boolean | default `true` — oculta la plantilla del selector si `false` |
+| `created_by` | int | NOT NULL — ID admin CRM |
+| `updated_by` | int | nullable — ID admin CRM |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+| `deleted_at` | timestamp | nullable — `NULL` = activo; valor = soft-deleted |
+
+> **Índices:** `(is_active, deleted_at)`, `name`.  
+> **Soft-delete:** `DELETE /:id` setea `is_active = false` + `deleted_at = NOW()`. `PATCH /:id/restore` revierte ambos campos.
+
+---
+
+### `listing_conditions` — Condiciones GTS Grade (RF-CAT-009)
+
+Tabla CMS gestionada por admins CRM. Almacena el contenido display de cada nivel de condición (Excellent / Good / Fair) — descripción, puntaje de referencia y token de color UI. El listing sigue guardando `condition` como enum (`EXCELLENT | GOOD | FAIR`), **sin FK** a esta tabla.
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid | PK |
+| `code` | varchar(20) | UNIQUE NOT NULL — `EXCELLENT \| GOOD \| FAIR` — clave lógica inmutable |
+| `label` | varchar(100) | NOT NULL — etiqueta de display: `Excellent`, `Good`, `Fair` |
+| `score` | int | NOT NULL — puntaje de referencia UI: `95`, `75`, `55` (informativo, no se guarda en listing) |
+| `ui_color` | varchar(20) | NOT NULL — token de color UI: `green`, `blue`, `amber` |
+| `description` | text | NOT NULL — descripción resumida del nivel |
+| `sort_order` | int | default 0 |
+| `is_active` | boolean | default `true` |
+| `updated_by` | int | nullable — ID admin CRM |
+| `created_at` | timestamp | NOT NULL |
+| `updated_at` | timestamp | NOT NULL |
+
+> **Índices:** `code` (UNIQUE), `(is_active, sort_order)`.  
+> **Seed fijo:** 3 filas con UUIDs constantes (`44444444-0000-0000-0000-00000000000{1,2,3}`). No se crean ni eliminan desde la API — solo se actualizan.
+
+---
+
 ### `gts_categories` — Categorías internas GTS Store
 
 Categorías planas (sin anidamiento) para agrupar listings en la tienda. No se eliminan — se desactivan para no romper FKs existentes.
