@@ -81,7 +81,7 @@ Categorías planas (sin anidamiento) para agrupar listings en la tienda. No se e
 | `id` | uuid | PK |
 | `title` | varchar | nullable — draft puede no tener título aún |
 | `description` | text | nullable |
-| `condition` | enum | nullable — `EXCELLENT \| GOOD \| FAIR` (GTS Grade visible al cliente — RF-CAT-009) |
+| `gts_condition_id` | uuid | nullable FK → `listing_conditions.id` — condición GTS Grade del listing |
 | `listing_type` | enum | `LISTING \| TEMPLATE` |
 | `status` | enum | `draft \| ready \| scheduled \| published \| partially_published \| out_of_stock \| unpublished \| inactive` |
 | `source_type` | enum | `ORIGINAL \| FROM_TEMPLATE \| FROM_COPY` |
@@ -265,6 +265,7 @@ Append-only. Cada cambio de stock genera una fila. `SUM(quantity_delta)` debe co
 | `listing_id` | uuid | FK único → `listings.id` |
 | `ebay_linked_account_id` | int | FK → `gobig_ebay_linked_accounts` (int — tabla externa) |
 | `ebay_listing_id` | varchar | nullable — devuelto por `publishOffer` |
+| `condition` | enum | nullable — `EXCELLENT \| GOOD \| FAIR` — condición del listing enviada a eBay |
 | `ebay_sku` | varchar | nullable — solo single (`is_variation = false`) |
 | `ebay_offer_id` | varchar | nullable — solo single |
 | `ebay_inventory_group_key` | varchar | nullable — solo variaciones |
@@ -388,7 +389,7 @@ erDiagram
         uuid        id
         varchar     title                   "nullable"
         text        description             "nullable"
-        enum        condition               "nullable — EXCELLENT|GOOD|FAIR"
+        uuid        gts_condition_id        "nullable FK → listing_conditions.id"
         enum        listing_type            "LISTING|TEMPLATE"
         enum        status                  "draft|ready|scheduled|published|partially_published|out_of_stock|unpublished|inactive"
         enum        source_type             "ORIGINAL|FROM_TEMPLATE|FROM_COPY"
@@ -508,6 +509,7 @@ erDiagram
         uuid        listing_id              "FK único"
         int         ebay_linked_account_id  "int — tabla externa"
         varchar     ebay_listing_id         "nullable"
+        enum        condition               "nullable — EXCELLENT|GOOD|FAIR"
         varchar     ebay_sku                "nullable — single"
         varchar     ebay_offer_id           "nullable — single"
         varchar     ebay_inventory_group_key "nullable — variaciones"
@@ -582,6 +584,21 @@ erDiagram
         timestamp   updated_at
     }
 
+    listing_conditions {
+        uuid        id
+        varchar     code                    "UNIQUE — EXCELLENT|GOOD|FAIR"
+        varchar     label
+        int         score
+        varchar     ui_color
+        text        description
+        int         sort_order
+        boolean     is_active
+        int         updated_by              "nullable — int — tabla externa"
+        timestamp   created_at
+        timestamp   updated_at
+    }
+
+    listing_conditions          ||--o{   listings                         : "gts_condition_id"
     gts_categories              ||--o{   listings                         : "categoría GTS Store"
 
     listings                    ||--o|   listing_pricing                  : "1-1 cuando is_variation=false"
