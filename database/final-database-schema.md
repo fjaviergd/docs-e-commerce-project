@@ -151,8 +151,8 @@ El campo `status` permite saber qué ítems están disponibles por bodega en tie
 | `listing_id` | uuid | FK → `listings.id` |
 | `listing_variation_id` | uuid | nullable FK → `listing_variations.id` — `null` = single listing |
 | `crm_inventory_id` | int | ID principal en la tabla `inventory` del CRM — UNIQUE |
-| `crm_po_id` | varchar | nullable — número de PO en el CRM |
-| `crm_po_line` | varchar | nullable — línea de la PO en el CRM |
+| `crm_po_id` | varchar | NOT NULL — número de PO en el CRM |
+| `crm_po_line` | varchar | NOT NULL — línea de la PO en el CRM |
 | `crm_iq_id` | varchar | nullable — identificador IQ en el CRM |
 | `crm_warehouse_id` | int | Bodega origen — denormalizado para queries rápidos |
 | `status` | enum | default `available` — `available \| reserved \| sold` — se actualiza en las mismas transacciones que `listing_stock` y `inventory_reservations` |
@@ -426,8 +426,8 @@ erDiagram
         uuid        listing_id
         uuid        listing_variation_id    "nullable"
         int         crm_inventory_id        "UNIQUE — int — tabla externa"
-        varchar     crm_po_id               "nullable"
-        varchar     crm_po_line             "nullable"
+        varchar     crm_po_id               "NOT NULL"
+        varchar     crm_po_line             "NOT NULL"
         varchar     crm_iq_id               "nullable"
         int         crm_warehouse_id        "int — tabla externa"
         enum        status                  "available|reserved|sold — default available"
