@@ -1,26 +1,26 @@
 # Backend Spec: Search Inventory IDs Endpoint
 
 > **Para:** Equipo de Backend — `gts-ecommerce-backend`
-> **Contexto:** Este endpoint existe actualmente en `crm-api-nestjs`. Se necesita portarlo a `gts-ecommerce-backend` con mejoras en los nombres de campos y lógica adicional de validación.
+> **Contexto:** Este endpoint existe actualmente en `api-nestjs`. Se necesita portarlo a `gts-ecommerce-backend` con mejoras en los nombres de campos y lógica adicional de validación.
 
 ---
 
 ## 1. Para qué sirve este endpoint
 
-El wizard de creación de listings (`e-commerce-v2/create-listing`) necesita que el usuario asocie items de inventario del CRM al nuevo listing antes de publicarlo. El endpoint recibe términos de búsqueda (rangos de PO, rangos de IQ ID, IDs específicos), busca los items en la base de datos del CRM, y devuelve cuáles están disponibles para ser usados y cuáles ya están asignados a otro listing.
+El wizard de creación de listings (`e-commerce/create-listing`) necesita que el usuario asocie items de inventario del CRM al nuevo listing antes de publicarlo. El endpoint recibe términos de búsqueda (rangos de PO, rangos de IQ ID, IDs específicos), busca los items en la base de datos del CRM, y devuelve cuáles están disponibles para ser usados y cuáles ya están asignados a otro listing.
 
 ---
 
-## 2. Referencia: endpoint actual en `crm-api-nestjs`
+## 2. Referencia: endpoint actual en `api-nestjs`
 
 El equipo puede revisar la implementación completa aquí:
 
-| Archivo | Ruta en `crm-api-nestjs` |
-|---|---|
-| Controller | `src/ecommerce/modules/gts-crm-inventory/gts-crm-inventory.controller.ts` |
-| Service | `src/ecommerce/modules/gts-crm-inventory/gts-crm-inventory.service.ts` |
-| Entity | `src/ecommerce/modules/gts-crm-inventory/entities/gts-crm-inventory.entity.ts` |
-| Request DTO | `src/ecommerce/modules/gts-crm-inventory/dto/search-inventory-ids.dto.ts` |
+| Archivo      | Ruta en `api-nestjs`                                                               |
+| ------------ | ---------------------------------------------------------------------------------- |
+| Controller   | `src/ecommerce/modules/gts-crm-inventory/gts-crm-inventory.controller.ts`          |
+| Service      | `src/ecommerce/modules/gts-crm-inventory/gts-crm-inventory.service.ts`             |
+| Entity       | `src/ecommerce/modules/gts-crm-inventory/entities/gts-crm-inventory.entity.ts`     |
+| Request DTO  | `src/ecommerce/modules/gts-crm-inventory/dto/search-inventory-ids.dto.ts`          |
 | Response DTO | `src/ecommerce/modules/gts-crm-inventory/dto/search-inventory-ids-response.dto.ts` |
 
 **Endpoint actual:** `POST /api/gts-crm-inventory/search-inventory-ids`
@@ -34,24 +34,25 @@ El equipo puede revisar la implementación completa aquí:
 
 ### Columnas relevantes de la tabla `inventory`
 
-| Columna DB | Entity property | Tipo | Descripción |
-|---|---|---|---|
-| `id` | `id` | INT | PK — identificador interno del registro |
-| `poid` | `poId` | INT | Purchase Order ID |
-| `poline` | `poLine` | VARCHAR(11) | Purchase Order Line |
-| `inventoryid` | `iqId` | INT | IQ ID (identificador de inventario) |
-| `ecommerce_listing_id` | `ecommerceListingId` | INT | Si es `NULL`, el item está disponible; si tiene valor, ya está asignado a otro listing |
-| `ebay_listing_id` | `ebayListingId` | VARCHAR | ID del listing en eBay (si aplica) |
-| `gts_store_listing_id` | `gtsStoreListingId` | INT | ID del listing en GTS Store (si aplica) |
-| `data_sanitization_status` | `dataSanitizationStatus` | VARCHAR(50) | Estado de sanitización R2V3 |
-| `cosmetic_description` | `cosmeticDescription` | VARCHAR(50) | Descripción cosmética R2V3 |
-| `product_func_description` | `productFuncDescription` | VARCHAR(50) | Descripción funcional R2V3 |
+| Columna DB                 | Entity property          | Tipo        | Descripción                                                                            |
+| -------------------------- | ------------------------ | ----------- | -------------------------------------------------------------------------------------- |
+| `id`                       | `id`                     | INT         | PK — identificador interno del registro                                                |
+| `poid`                     | `poId`                   | INT         | Purchase Order ID                                                                      |
+| `poline`                   | `poLine`                 | VARCHAR(11) | Purchase Order Line                                                                    |
+| `inventoryid`              | `iqId`                   | INT         | IQ ID (identificador de inventario)                                                    |
+| `ecommerce_listing_id`     | `ecommerceListingId`     | INT         | Si es `NULL`, el item está disponible; si tiene valor, ya está asignado a otro listing |
+| `ebay_listing_id`          | `ebayListingId`          | VARCHAR     | ID del listing en eBay (si aplica)                                                     |
+| `gts_store_listing_id`     | `gtsStoreListingId`      | INT         | ID del listing en GTS Store (si aplica)                                                |
+| `data_sanitization_status` | `dataSanitizationStatus` | VARCHAR(50) | Estado de sanitización R2V3                                                            |
+| `cosmetic_description`     | `cosmeticDescription`    | VARCHAR(50) | Descripción cosmética R2V3                                                             |
+| `product_func_description` | `productFuncDescription` | VARCHAR(50) | Descripción funcional R2V3                                                             |
 
 > **Nota:** No hay ningún campo de warehouse en la entidad actual. Ver §6 para el nuevo campo `crmWarehouseId` requerido.
 
 ### Queries SQL equivalentes que ejecuta actualmente
 
 **Búsqueda por PO Line range** (`poid = X AND poline IN (...)`):
+
 ```sql
 SELECT id, poid, poline, inventoryid, ecommerce_listing_id, ebay_listing_id, gts_store_listing_id
 FROM inventory
@@ -59,6 +60,7 @@ WHERE poid = :poId AND poline IN (:lines)
 ```
 
 **Búsqueda por IQ ID range o IDs específicos** (`inventoryid IN (...)`):
+
 ```sql
 SELECT id, poid, poline, inventoryid, ecommerce_listing_id, ebay_listing_id, gts_store_listing_id
 FROM inventory
@@ -66,6 +68,7 @@ WHERE inventoryid IN (:ids)
 ```
 
 **Fetch R2V3 data** (solo cuando `numberOfItems = 1` y se encontró exactamente 1 item):
+
 ```sql
 SELECT data_sanitization_status, cosmetic_description, product_func_description
 FROM inventory
@@ -129,6 +132,7 @@ El comportamiento general es el mismo. Los cambios son:
 Los nombres actuales mezclan convenciones. En el nuevo endpoint todos los campos del objeto de item llevan el prefijo `crm` para dejar claro que son IDs provenientes de la base del CRM.
 
 **Antes (actual):**
+
 ```json
 {
   "id": 480383,
@@ -139,6 +143,7 @@ Los nombres actuales mezclan convenciones. En el nuevo endpoint todos los campos
 ```
 
 **Después (nuevo):**
+
 ```json
 {
   "crmInventoryId": 480383,
@@ -165,6 +170,7 @@ Una vez identificada la fuente, incluir `crmWarehouseId` en la respuesta de cada
 Actualmente el endpoint solo verifica si un item está **asignado** a un listing (`ecommerce_listing_id IS NOT NULL`). La nueva versión también debe verificar si el item está **reservado**.
 
 El equipo de backend debe investigar:
+
 - ¿Existe en `gts_crm_db` (o en `gts-ecommerce-backend`) alguna tabla o campo que indique reserva de items? (ej. tabla `inventory_reservations`, flag `reserved`, `reservation_id`, o similar)
 - Definir la lógica: un item reservado, ¿debe caer en `itemsFoundUnavailable` o en una nueva categoría `itemsFoundReserved`?
 
@@ -179,7 +185,8 @@ El equipo de backend debe investigar:
 ```
 POST /api/inventory/search-inventory-ids
 ```
-*(o la convención de rutas que use `gts-ecommerce-backend`)*
+
+_(o la convención de rutas que use `gts-ecommerce-backend`)_
 
 ### Request body (sin cambios respecto al actual)
 
@@ -232,15 +239,20 @@ POST /api/inventory/search-inventory-ids
 ## 7. Auth y entorno
 
 - El endpoint debe estar protegido con Bearer token (igual que los demás endpoints de `gts-ecommerce-backend`)
-- La conexión a `gts_crm_db` ya existe en `crm-api-nestjs`. Confirmar si `gts-ecommerce-backend` ya tiene acceso a esa misma base de datos o si se necesita configurar un datasource adicional.
+- La conexión a `gts_crm_db` ya existe en `api-nestjs`. Confirmar si `gts-ecommerce-backend` ya tiene acceso a esa misma base de datos o si se necesita configurar un datasource adicional.
 
 ---
 
 ## 8. Preguntas abiertas para el equipo de backend
 
-| # | Pregunta | Quién debe responder |
-|---|---|---|
-| 1 | ¿`gts-ecommerce-backend` ya tiene conexión a `gts_crm_db`? | Backend infra |
-| 2 | ¿Dónde se almacena el warehouse de un item de inventario en el CRM? | Backend CRM |
-| 3 | ¿Existe un mecanismo de reserva de items? ¿Qué tabla/columna? | Backend CRM / Ops |
+| #   | Pregunta                                                   | Quién debe responder                   |
+| --- | ---------------------------------------------------------- | -------------------------------------- |
+| 1   | ¿`gts-ecommerce-backend` ya tiene conexión a `gts_crm_db`? | Si, con estas varibles GTS_CRM_DB_HOST |
+
+GTS_CRM_DB_PORT
+GTS_CRM_DB_NAME
+GTS_CRM_DB_USERNAME
+GTS_CRM_DB_PASSWORD|
+| 2 | ¿Dónde se almacena el warehouse de un item de inventario en el CRM? | en la tabla inventory hay una llave foranea del warehouse (warehouse_id) con referencia a la tabla locations |
+| 3 | ¿Existe un mecanismo de reserva de items? ¿Qué tabla/columna? | tabla inventory campo (status 2 valores, Available y Reserved)|
 | 4 | ~~Un item reservado ¿va en `itemsFoundUnavailable` o en una categoría nueva?~~ **Resuelto:** los items reservados van en `itemsFoundUnavailable`. El frontend mostrará al usuario que no están disponibles, igual que los ya listados. | — |
