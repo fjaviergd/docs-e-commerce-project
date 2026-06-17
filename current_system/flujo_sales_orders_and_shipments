@@ -1,0 +1,570 @@
+Flujo de Sales Orders y Shipments
+Sales Orders
+Se crean en la tabla so
+_
+info
+Campos minimos para crear un so
+_
+info:
+id
+Automático, incrementable
+so
+Número de SO, tienen que poner un número más uno al más reciente.
+customer
+id
+_
+Id de cliente, referente a su registro en la tabla users
+clientuser
+id
+_
+Id de cliente, referente a su registro en la tabla users (el mismo que customer
+_
+id)
+terms
+id
+_
+Id de terms, referente a su registro en la tabla terms
+rep
+id
+_
+Id del vendedor (rep), referente a su registro en la tabla users
+contactcontactuser
+id
+_
+Id de contacto de compra (puede ser el mismo de customer
+_
+id), referente a su registro en la
+tabla users
+conditions
+id
+_
+Id de la condicion de venta, referente a su registro en la tabla conditions
+Shipfromcontactuser
+id
+_
+Id del usuario de contacto de la seccion Shipping From, referente a su registro en la tabla users
+Shiptoclientuser
+id
+_
+Id del usuario de contacto de la seccion Shipping To, referente a su registro en la tabla users
+status
+Status de la Sale Order,
+Open: Status Inicial
+Reserved: Cuando todos los items estan Reserved
+Partially Reserved: Cuando hay al menos un item Reserved
+Invoiced: cuando todos los items estan Invoiced
+Voided: cuando hacen void al SO
+shipstatus
+Status del Shipment,
+default para un SO nuevo: Open
+Cuando ya tiene un shipment agendado: Scheduled
+states
+_
+id
+Estado para la aplicacion de taxes, va el id del state relacionado con el state del shipment to.
+Los states estan en la tabla states
+Ahi mismo sacamos el porcentaje de tax a aplicar desde el campo tax:
+tax
+Valor del tax
+subtotal
+Valor de total antes de taxes
+serviches
+_
+charge
+Valor de services a aumentar a la orden, campo Services
+misc
+charge
+_
+Valor de Misc. Charge a aumentar a la orden, campo Misc. Charge
+extracost
+Valor de servicios de instalacion a aumentar a la orden, campo Installation Cost
+extendedcost
+Suma del valor unitprice de todos los solines (inventarios)
+estimated
+cost
+_
+Formula para sacar el estimated
+cost:
+_
+Sumar el campo purchasecost de todos los solines (inventories)
+Asignar el valor final a estimated
+cost
+_
+cleartax
+Ajustar el valor a 0 (indicamos al sistema que los taxes estan activos)
+warehouse
+id
+_
+Id del warehouse de la SO:
+3: Houston
+243: Site 10135
+reference
+Referencia de la SO
+gross
+margin
+_
+Formula para sacar el gross
+margin:
+_
+1 - Obtenemos el suppliermargin del PO para cada soline (inventory)
+$po
+_
+id = po
+_
+id del registro inventory
+SELECT id,suppliermargin, po FROM po
+_
+info WHERE id = '$po
+id' LIMIT 1
+_
+// Dividimos el margen del proveedor por 100 para convertirlo a porcentaje
+$suppliermargin
+_percentage = $suppliermargin
+_po / 100;
+// Calculamos el margen estimado
+$diff = $inventory_
+unitprice - $inventory_
+unitcost;
+if($suppliermargin
+_percentage > 0){
+if ($diff > 0) {
+$estimated
+_
+margin = $diff * ($suppliermargin
+_percentage);
+} else {
+$estimated
+_
+margin = $estimated
+_
+margin + $diff;
+}
+} else {
+$estimated
+_
+margin = 0;
+}
+Asignamos al campo gross
+margin el valor de $estimated
+_
+margin
+_
+margin
+percentage
+_
+Formula para sacar el margin
+percentage:
+_
+Iteramos cada item dentro de los solines (inventories)
+$po
+_
+id = po
+_
+id del registro inventory
+SELECT id,suppliermargin, po FROM po
+_
+info WHERE id = '$po
+id' LIMIT 1
+_
+// Dividimos el margen del proveedor por 100 para convertirlo a porcentaje
+$suppliermargin
+_percentage = $suppliermargin
+_po / 100;
+// Calculamos el margen estimado
+$diff = $inventory_
+unitprice - $inventory_
+unitcost;
+if($suppliermargin
+_percentage > 0){
+if ($diff > 0) {
+$estimated
+_
+margin = $diff * ($suppliermargin
+_percentage);
+} else {
+$estimated
+_
+margin = $estimated
+_
+margin + $diff;
+}
+} else {
+$estimated
+_
+margin = 0;
+}
+//sumamos el unitprice total de todos los inventories de la so
+$inventory_
+unitprice = $dt
+_
+inventory_
+data['unitprice'];
+$totalsales
+_
+sum += $inventory_
+unitprice;
+if ($profit
+_
+total > 0) {
+$margin
+_percentage = $profit
+total / $totalsales
+sum;
+_
+_
+$margin
+_percentage = $margin
+_percentage * 100;
+} else {
+$margin
+_percentage = 0;
+}
+$margin
+_percentage = number
+_
+format($margin
+_percentage, 2,
+$profit
+_
+interno = $profit
+interno + $estimated
+_
+_
+margin;
+$profit
+interno = number
+_
+_
+format($profit
+interno, 2,
+'
+'
+_
+.
+,
+'');
+'
+'
+.
+(acumulamos el profit de todos los inventories)
+$profit
+_
+total = $profit
+interno;
+_
+if ($profit
+_
+total > 0) {
+$margin
+_percentage = $profit
+total / $totalsales
+sum;
+_
+_
+$margin
+_percentage = $margin
+_percentage * 100;
+} else {
+$margin
+_percentage = 0;
+,
+'')
+}
+$margin
+_percentage = number
+_
+format($margin
+_percentage, 2,
+'
+'
+.
+,
+'');
+Asignamos al campo margin
+percentage el valor de $margin
+_percentage_
+profit
+Variable $profit
+total de la formula de arriba
+_
+total
+Valor total de la orden:
+$total = floatval($extendCost)
++ floatval($extracost)
++ floatval($freight)
++ floatval($servichesCharge)
++ floatval($misCcharge)
++ floatval($tax);
+created
+at
+_
+Fecha de creacion de la SO, tipo de dato datetime
+updated
+at
+_
+Fecha de creacion de la SO, tipo de dato datetime
+date
+Fecha de creacion de la SO, en string YYYY-mm-dd, ex: 2026-06-12
+soline
+Contador de line items de la SO, iniciar en 0, al agregar un line item a la orden aumentar este
+número +1
+client
+PO
+Number
+_
+_
+Campo para agregar client po del cliente
+type
+Establecer el valor: so
+Campos Customer Information:
+Contactcontact
+Nombre de cliente para el campo Contact del bloque Customer Information
+contactemail
+Email de cliente para el campo Email del bloque Customer Information
+contactphone
+Teléfono de cliente para el campo Phone del bloque Customer Information
+contactaddress1
+Direccion de cliente para el campo Address 1 del bloque Customer Information
+contactaddress2
+Direccion de cliente para el campo Address 2 del bloque Customer Information
+contactcity
+Ciudad de cliente para el campo City del bloque Customer Information
+contactcompany
+Company Name del cliente para el campo Company Name del bloque Customer Information
+contactcountry
+Country del cliente para el campo Country del bloque Customer Information
+contactpostalcode
+Postal Code del cliente para el campo Postal Code del bloque Customer Information
+contactstate
+Estado del cliente para el campo State del bloque Customer Information, poner abreviación
+en mayusculas, ejemplo TX
+currency
+Currency de la SO, ejemplo: USD
+customer
+Nombre del cliente
+freight
+Costo del envio
+saledate
+Fecha de venta
+master
+id
+_
+Id de la master company, asignar el valor 1
+Campos Shipping From
+shipfromlocation
+id
+_
+Id de la location referente al shipping from, puede ser:
+headq: si la locación selecionada es la headquarter
+Numerico (id): id de la locacion referente a la tabla locations
+NULL (vacio): si la direccion es one-time y no se tiene que guardar en el sistema
+shipfromaddress1
+Direccion de shipping from, campo Address de bloque Shipping From
+shipfromaddress2
+Direccion 2 de shipping from, campo Address 2 de bloque Shipping From
+shipfromcity
+City de shipping from, campo City de bloque Shipping From
+shipfromcompany
+Company de shipping from, campo Company de bloque Shipping From
+shipfromcontact
+Contact de shipping from, campo Contact de bloque Shipping From
+shipfromcountry
+Country de shipping from, campo Country de bloque Shipping From
+shipfromemail
+Email de shipping from, campo Email de bloque Shipping From
+shipfromphone
+Phone de shipping from, campo Phone de bloque Shipping From
+shipfrompostalcode
+Postal Code de shipping from, campo Postal Code de bloque Shipping From
+shipfromstate
+Estado del Shipping From para el campo State del bloque Shipping From, poner abreviación
+en mayusculas, ejemplo TX
+Campos Shipping To:
+shiptolocation
+id
+_
+Id de la location referente al shipping to, puede ser:
+headq: si la locación selecionada es la headquarter
+Numerico (id): id de la locacion referente a la tabla locations
+NULL (vacio): si la direccion es one-time y no se tiene que guardar en el sistema
+shiptoaddress1
+Address 1 de shipping to, campo Address de bloque Shipping To
+shiptoaddress2
+Address 2 de shipping to, campo Address 2 de bloque Shipping To
+shiptocity
+City de shipping to, campo City de bloque Shipping To
+shiptocompany
+Shipping To
+Nombre de compañia del cliente a quien le hacen el envio, campo Company de bloque
+shiptocontact
+Shipping To
+Nombre de compañia del cliente a quien le hacen el envio, campo Company de bloque
+shiptocountry
+Pais del cliente a quien le hacen el envio, campo Country de bloque Shipping To
+shiptoemail
+Email del cliente a quien le hacen el envio, campo Email de bloque Shipping To
+shiptophone
+Telefono del cliente a quien le hacen el envio, campo Phone de bloque Shipping To
+shiptopostalcode
+Codigo Postal del cliente a quien le hacen el envio, campo Postal Code de bloque Shipping
+To
+shiptostate
+Estado del Shipping To para el campo State del bloque Shipping To, poner abreviación en
+mayusculas, ejemplo TX
+Reservar Item
+Instrucciones para reservar un inventory a una SO:
+El campo status de cada inventory puede tener dos estados
+Tenemos que verificar que el status este = Available, al reservar cambiar a Reserved y hacer lo
+siguiente en los siguientes campos de inventory:
+so: pones el numero de orden de la so
+so
+id: el id de la so referente a su tabla so
+info_
+_
+unitprice: el precio de venta
+status= Reserved
+datereserved y datereserved2: ponerle la fecha de cuando fue reservado
+reservedbyuser
+_
+id: el id del usuario que esta reservando, referente a la tabla users
+reservedby: iniciales del usuario que esta reservando, ejemplo Anuar Garcia: AG
+soline: el numero de su linea en la so, aqui obtienes el valor soline de la so a asignar, y le
+sumas +1, y tambien aumentar el +1 en el campo soline de la so
+info relacionada
+_
+quantity: numero de productos, generalmente esto se le pone 1, si tienes 20 laptops, se
+desglosan y a cada una se le asigna una soline
+Crear un Shipment
+Crear el registro en la tabla shipment
+id: automatico, auto incrementable
+so
+id: id de su so referente a la tabla so
+info
+_
+_
+rep
+id: id de la persona que crea el shipment referente a la tabla users
+_
+type: establecerlo como “MANUAL”
+status: establecerlo como “Scheduled”
+created
+at: fecha de creacion del shipment, en formato datetime: 2026-06-12 19:51:42
+_
+carrier
+id: id de su carrier referente a la tabla carriers
+_
+carrier
+string: se obtiene de su registro de carriers
+_
+service
+code: se obtiene de su registro de carriers
+_
+service
+string: se obtiene de su registro de carriers
+_
+bill
+account
+number: bill account de envio (platicarlo con anuar)
+_
+_
+payment
+type:
+“Sender” o “Recipient”
+_
+carrier
+_
+y payment
+id, carrier
+string, service
+code, service
+string, bill
+_
+_
+_
+_
+type podemos platicarlo con anuar y dejar ya unos predefinidos
+_
+account
+number,
+_
+declared
+value: opcional si se quiere establecer un valor de mercancia, por default 0:00
+_
+unit
+measurement: establecer “Lbs”
+_
+unit
+dimension: establecer “inch”
+_
+locations
+_
+3: Houston
+243: Site 10135
+id: de donde sale el envio:
+signature: establecer: “No Signature”
+,
+to
+address: Direccion linea 1 de destino
+_
+to
+address
+2: Direccion linea 2 de destino
+_
+_
+to
+city: Ciudad de destino
+_
+to
+company: Company de destino
+_
+to
+country: Pais de destino
+_
+to
+name: Persona que recibe
+_
+to
+phone: Telefono de destino
+_
+to
+state: estado de recibe, tiene que ser abreviatura, ex: NY, CA, TX
+_
+to
+postalcode: codigo postal de destino
+_
+from
+address: direccion linea 1 remitente
+_
+from
+address
+2: direccion linea 2 remitente
+_
+_
+from
+city: Ciudad remitente
+_
+from
+company: Compañia remitente
+_
+from
+country: Pais remitente
+_
+from
+name: Nombre remitente
+_
+from
+phone: Telefono remitente
+_
+from
+state: Estado remitente, tiene que ser abreviatura, ex: NY, CA, TX
+_
+from
+postalcode: codigo postal remitente_
+email: email para envio (email cliente)
+shipfromlocation
+243
+id: si se envia desde Houston poner 3, si se envia desde Site10135 poner
+_
+master
+id: id de la master company poner 1
+_
