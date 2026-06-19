@@ -27,12 +27,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "eBay-order-automation/Campos Sales Orders y Shipments - verificacion tabla.md",
+                "file": "eBay-order-automation/Mapeo de datos.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Campos Sales Orders y Shipments - verificacion tabla"
+              "title": "Mapeo de datos"
             }
           },
           {
@@ -110,8 +110,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 448.5,
-    "collapsed": true
+    "width": 448.5
   },
   "right": {
     "id": "52291b281a258b69",
@@ -127,7 +126,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "eBay-order-automation/Campos Sales Orders y Shipments - verificacion tabla.md",
+                "file": "eBay-order-automation/Mapeo de datos.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -137,7 +136,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Campos Sales Orders y Shipments - verificacion tabla"
+              "title": "Backlinks for Mapeo de datos"
             }
           },
           {
@@ -146,12 +145,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "eBay-order-automation/Campos Sales Orders y Shipments - verificacion tabla.md",
+                "file": "eBay-order-automation/Mapeo de datos.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from Campos Sales Orders y Shipments - verificacion tabla"
+              "title": "Outgoing links from Mapeo de datos"
             }
           },
           {
@@ -189,13 +188,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "eBay-order-automation/Campos Sales Orders y Shipments - verificacion tabla.md",
+                "file": "eBay-order-automation/Mapeo de datos.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Campos Sales Orders y Shipments - verificacion tabla"
+              "title": "Outline of Mapeo de datos"
             }
           }
         ]
@@ -218,10 +217,13 @@
   },
   "active": "97acdf7e20bef4d2",
   "lastOpenFiles": [
+    "eBay-order-automation/response_example.md",
+    "eBay-order-automation/Campos Sales Orders y Shipments - verificacion tabla.md",
+    "eBay-order-automation/Mapeo de datos.md",
+    "eBay-order-automation/Campos Sales Orders y Shipments - verificacion tabla copy.md",
     "current_system/flujo_sales_orders_and_shipments",
     "Untitled.canvas",
     "Untitled.base",
-    "eBay-order-automation/Campos Sales Orders y Shipments - verificacion tabla.md",
     "eBay-order-automation/Flujo de Sales Orders y Shipments - editable.md",
     "eBay-order-automation/Flujo de Sales Orders y Shipments.pdf",
     "eBay-order-automation/Flujo de Sales Orders y Shipments (Hector).md",

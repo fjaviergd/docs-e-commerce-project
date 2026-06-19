@@ -86,6 +86,7 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 ### `states_id`
 - **Descripción:** Estado para la aplicación de taxes. Va el id del state relacionado con el `state` del `shipment to`.
 - **Notas:** ✅ Hacer match entre el state que de ebay con el de esta tabla para establecer el id
+  ebayResponse: [buyer.taxAddress.stateOrProvince]
 
 ### `tax`
 - **Descripción:** Valor del tax.
@@ -95,6 +96,7 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 - **Descripción:** Valor de total antes de taxes.
 - **Notas:** Pondemos el valor total que nos da ebay?
   o desglosamos tomando el valor total de ebay y si tiene un state con tax le quitamos ese monto de tax y ponemos el valor calculado de esa operacion?
+  ebayResponse: [pricingSummary.priceSubtotal.value]
 
 ### `serviches_charge`
 - **Descripción:** Valor de services a aumentar a la orden, campo Services.
@@ -110,12 +112,14 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 
 ### `extendedcost`
 - **Descripción:** Suma del valor `unitprice` de todos los solines (inventarios).
-- **Notas:** Metemos el valor que da ebay
+- **Notas:** Metemos el valor que da ebay? o de la forma que dices?
+  ebayResponse: [pricingSummary.priceSubtotal.value]
 
 ### `estimated_cost`
 - **Descripción:** Sumar el campo `purchasecost` de todos los solines (inventories) y asignar el valor final a `estimated_cost`.
-- **Notas:** Este paso se hace
+- **Notas:** Este paso se hace con la formula? o
   Metemos el valor que da ebay?
+  ebayResponse: [pricingSummary.priceSubtotal.value]
 
 ### `cleartax`
 - **Descripción:** Ajustar el valor a `0` (indicamos al sistema que los taxes están activos).
@@ -163,7 +167,9 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 - **Descripción:** Contador de line items de la SO. Iniciar en `0`; al agregar un line item a la orden aumentar este número `+1`.
 - **Notas:** numero de items de la venta
   tomar el que viene de ebay y comprobar que estan disponibles en inventory?
-  si no los encontramos todos disponibles no generamos la SO?
+  si no los encontramos todos disponibles no generamos la SO? o 
+  reservamos todos los que tengamos y dejamos la order como   Partially Reserved?
+  ebayResponse: [lineItems.length]
 
 ### `client_PO_Number`
 - **Descripción:** Campo para agregar client PO del cliente.
@@ -176,27 +182,33 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 ### `contactcontact`
 - **Descripción:** Nombre de cliente para el campo Contact del bloque Customer Information.
 - **Notas:** nombre del cliente que nos de ebay ✅
+  ebayResponse: [buyer.buyerRegistrationAddress.fullName]
 
 ### `contactemail`
 - **Descripción:** Email de cliente para el campo Email del bloque Customer Information.
 - **Notas:** email del cliente que nos de ebay (email haseado) ✅
+  ebayResponse: [buyer.buyerRegistrationAddress.email]
 
 ### `contactphone`
 - **Descripción:** Teléfono de cliente para el campo Phone del bloque Customer Information.
 - **Notas:** phoneNumber que viene de ebay.
-  En caso de no estar dispoonible no lo ponemos?
+  En caso de no estar dispoonible dejamos N/A o null?
+  ebayResponse: [buyer.buyerRegistrationAddress.primaryPhone.phoneNumber]
 
 ### `contactaddress1`
 - **Descripción:** Dirección de cliente para el campo Address 1 del bloque Customer Information.
 - **Notas:** addressLine1 de ebay ✅
+  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.addressLine1]
 
 ### `contactaddress2`
 - **Descripción:** Dirección de cliente para el campo Address 2 del bloque Customer Information.
-- **Notas:** puede ir sin nada?
+- **Notas:** Si viene el addressLine2 de ebay se lo ponemos, si no va vacío.
+  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.addressLine2]
 
 ### `contactcity`
 - **Descripción:** Ciudad de cliente para el campo City del bloque Customer Information.
 - **Notas:** city de ebay ✅
+  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.city]
 
 ### `contactcompany`
 - **Descripción:** Company Name del cliente para el campo Company Name del bloque Customer Information.
@@ -205,23 +217,28 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 ### `contactcountry`
 - **Descripción:** Country del cliente para el campo Country del bloque Customer Information.
 - **Notas:** countryCode de ebay ✅
+  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.countryCode]
 
 ### `contactpostalcode`
 - **Descripción:** Postal Code del cliente para el campo Postal Code del bloque Customer Information.
 - **Notas:** postalCode de ebay ✅
+  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.postalCode]
 
 ### `contactstate`
 - **Descripción:** Estado del cliente para el campo State del bloque Customer Information. Poner abreviación en mayúsculas, ejemplo: `TX`.
 - **Notas:** stateOrProvince de ebay ✅
+  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.stateOrProvince]
 
 ### `currency`
 - **Descripción:** Currency de la SO, ejemplo: `USD`.
 - **Notas:** USD por default?
   Lo podemos sacar de ebay
+  ebayResponse: [pricingSummary.total.currency]
 
 ### `customer`
 - **Descripción:** Nombre del cliente.
 - **Notas:** fullName de ebay ✅
+  ebayResponse: [buyer.buyerRegistrationAddress.fullName]
 
 ### `freight`
 - **Descripción:** Costo del envío.
@@ -230,6 +247,7 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 ### `saledate`
 - **Descripción:** Fecha de venta.
 - **Notas:** Fecha al momento de crear el registro o la que viene de ebay?
+  ebayResponse: [creationDate]
 
 ### `master_id`
 - **Descripción:** Id de la master company, asignar el valor `1`.
@@ -287,14 +305,17 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 ### `shiptoaddress1`
 - **Descripción:** Address 1 de shipping to, campo Address del bloque Shipping To.
 - **Notas:** addressLine1 de ebay ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine1]
 
 ### `shiptoaddress2`
 - **Descripción:** Address 2 de shipping to, campo Address 2 del bloque Shipping To.
-- **Notas:** Null
+- **Notas:** Si viene el adress 2 de ebay se lo ponemos
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine2]
 
 ### `shiptocity`
 - **Descripción:** City de shipping to, campo City del bloque Shipping To.
 - **Notas:** city de ebay ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.city]
 
 ### `shiptocompany`
 - **Descripción:** Nombre de compañía del cliente a quien le hacen el envío, campo Company del bloque Shipping To.
@@ -308,23 +329,28 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 ### `shiptocountry`
 - **Descripción:** País del cliente a quien le hacen el envío, campo Country del bloque Shipping To.
 - **Notas:** countryCode de ebay ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode]
 
 ### `shiptoemail`
 - **Descripción:** Email del cliente a quien le hacen el envío, campo Email del bloque Shipping To.
 - **Notas:** email del cliente que nos de ebay (email haseado) ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.email]
 
 ### `shiptophone`
 - **Descripción:** Teléfono del cliente a quien le hacen el envío, campo Phone del bloque Shipping To.
 - **Notas:** phoneNumber que viene de ebay.
   En caso de no estar dispoonible no lo ponemos?
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.primaryPhone.phoneNumber]
 
 ### `shiptopostalcode`
 - **Descripción:** Código postal del cliente a quien le hacen el envío, campo Postal Code del bloque Shipping To.
 - **Notas:** postalCode de ebay ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.postalCode]
 
 ### `shiptostate`
 - **Descripción:** Estado del Shipping To para el campo State del bloque Shipping To. Poner abreviación en mayúsculas, ejemplo: `TX`.
 - **Notas:** stateOrProvince de ebay ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince]
 
 ---
 
@@ -348,7 +374,7 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 
 ### `status`
 - **Descripción:** Establecerlo como `"Scheduled"`.
-- **Notas:** `"Scheduled"` por defecto ✅
+- **Notas:** `"Scheduled"` por defecto y si la so queda es diferente a Reserved que status
 
 ### `created_at`
 - **Descripción:** Fecha de creación del shipment, en formato datetime. Ejemplo: `2026-06-12 19:51:42`.
@@ -402,14 +428,17 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 ### `to_address`
 - **Descripción:** Dirección línea 1 de destino.
 - **Notas:** addressLine1 de ebay ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine1]
 
 ### `to_address_2`
 - **Descripción:** Dirección línea 2 de destino.
-- **Notas:** null
+- **Notas:** Si viene el addressLine2 de ebay se lo ponemos, si no va null.
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine2]
 
 ### `to_city`
 - **Descripción:** Ciudad de destino.
 - **Notas:** city de ebay ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.city]
 
 ### `to_company`
 - **Descripción:** Company de destino.
@@ -418,23 +447,28 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 ### `to_country`
 - **Descripción:** País de destino.
 - **Notas:** countryCode de ebay ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode]
 
 ### `to_name`
 - **Descripción:** Persona que recibe.
 - **Notas:** fullName de ebay ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.fullName]
 
 ### `to_phone`
 - **Descripción:** Teléfono de destino.
 - **Notas:** phoneNumber que viene de ebay.
   En caso de no estar dispoonible no lo ponemos?
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.primaryPhone.phoneNumber]
 
 ### `to_state`
 - **Descripción:** Estado de destino. Tiene que ser abreviatura, ejemplo: `NY`, `CA`, `TX`.
 - **Notas:** stateOrProvince de ebay ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince]
 
 ### `to_postalcode`
 - **Descripción:** Código postal de destino.
 - **Notas:** postalCode de ebay ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.postalCode]
 
 ### `from_address`
 - **Descripción:** Dirección línea 1 remitente.
@@ -475,6 +509,7 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 ### `email`
 - **Descripción:** Email para envío (email cliente).
 - **Notas:** email del cliente que nos de ebay (email haseado) ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.email]
 
 ### `shipfromlocation_id`
 - **Descripción:** Si se envía desde Houston poner `3`; si se envía desde Site10135 poner `243`.
@@ -517,10 +552,10 @@ Estos campos aparecen en las instrucciones de reservar item y existen en la tabl
 
 ### `reservedbyuser_id`
 - **Descripción:** Id del usuario que está reservando, referente a la tabla `users`.
-- **Notas:** id del rep que creo el listing? o usuario sistema, lo va a reservar el webhook
+- **Notas:** id del rep que creo el listing? o usuario sistema?, lo va a reservar el webhook
 
 ### `reservedby`
-- **Descripción:** Iniciales del usuario que está reservando. Ejemplo: Anuar Garcia = `AG`.
+- **Descripción:** Iniciales del usuario que está reservando. Ejemplo: Anuar Garcia = `AG`. Si usamos usuario sistema iran esas iniciales
 - **Notas:** ✅
 
 ### `soline`
