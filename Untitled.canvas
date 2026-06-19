@@ -1,0 +1,11 @@
+{
+	"nodes":[
+		{"id":"7b901a3eb2093f92","x":-900,"y":-500,"width":280,"height":80,"type":"text","text":"Registro de endpoints para que ebay mande las notificaciones"},
+		{"id":"46eb23387fffed20","type":"text","text":"Ebay notifica que hubo compra","x":-340,"y":-500,"width":340,"height":50},
+		{"id":"4affb48dad009fcd","type":"text","text":"no da un id con el que hacemos un request al endpoint de ebay \nGET /sell/fulfillment/v1/order/{orderId}","x":-340,"y":-300,"width":340,"height":140},
+		{"id":"6faca3b814b4e96e","type":"text","text":"Que datos da en esa notificacion?","x":160,"y":-500,"width":340,"height":50}
+	],
+	"edges":[
+		{"id":"5dba1294ff2b49a1","fromNode":"46eb23387fffed20","fromSide":"bottom","toNode":"4affb48dad009fcd","toSide":"top"}
+	]
+}
