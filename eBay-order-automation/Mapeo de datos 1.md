@@ -446,31 +446,31 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 - **Notas:** Fecha de creacion automatica ✅
 - **Decision:** si ✅
 
-### `carrier_id`
+### `carrier_id` ⚠️
 - **Descripción:** Id del carrier referente a la tabla `carriers`.
 - **Notas:** 53 - UPS External por default?
 - **Decision:** preguntar a anuar, 51
 
-### `carrier_string`
+### `carrier_string ⚠️`
 - **Descripción:** Se obtiene de su registro de `carriers`.
 - **Notas:** UPS por defecto?
 - **Decision:** preguntar a anuar, FedEx
 
-### `carrier_code`
+### `carrier_code` ⚠️
 - **Descripción:** Se obtiene de su registro de `carriers`.
 - **Notas:** ups
 - **Decision:** ,""
-### `service_code`
+### `service_code` ⚠️
 - **Descripción:** Se obtiene de su registro de `carriers`.
 - **Notas:** ups_ground por defecto?
 - **Decision:** preguntar a anuar, fedex_ground
 
-### `service_string`
+### `service_string` ⚠️
 - **Descripción:** Se obtiene de su registro de `carriers`.
 - **Notas:** UPS® Ground por defecto?
 - **Decision:** preguntar a anuar, FedEx Ground®
 
-### `bill_account_number`
+### `bill_account_number ⚠️`
 - **Descripción:** Bill account de envío.
 - **Notas:** valor de external_account_number en tabla carriers ???
 - **Decision:** preguntar a anuar, ups=XJ2887, fedex=341701198
@@ -563,47 +563,47 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 ### `from_address`
 - **Descripción:** Dirección línea 1 remitente.
 - **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** preguntar a anuar
+- **Decision:** ⚠️
 
 ### `from_address_2`
 - **Descripción:** Dirección línea 2 remitente.
 - **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** preguntar a anuar
+- **Decision:** ⚠️
 
 ### `from_city`
 - **Descripción:** Ciudad remitente.
 - **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** preguntar a anuar
+- **Decision:** ⚠️
 
 ### `from_company`
 - **Descripción:** Compañía remitente.
 - **Notas:** "GreenTek Solutions, LLC" por default?
-- **Decision:** preguntar a anuar
+- **Decision:** ⚠️
 
 ### `from_country`
 - **Descripción:** País remitente.
 - **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** preguntar a anuar
+- **Decision:** ⚠️
 
 ### `from_name`
 - **Descripción:** Nombre remitente.
 - **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** preguntar a anuar
+- **Decision:** ⚠️
 
 ### `from_phone`
 - **Descripción:** Teléfono remitente.
 - **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** preguntar a anuar
+- **Decision:** ⚠️
 
 ### `from_state`
 - **Descripción:** Estado remitente. Tiene que ser abreviatura, ejemplo: `NY`, `CA`, `TX`.
 - **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** preguntar a anuar
+- **Decision:** ⚠️
 
 ### `from_postalcode`
 - **Descripción:** Código postal remitente.
 - **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** preguntar a anuar
+- **Decision:** ⚠️
 
 ### `email`
 - **Descripción:** Email para envío (email cliente).
@@ -615,7 +615,7 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 - **Descripción:** Si se envía desde Houston poner `3`; si se envía desde Site10135 poner `243`.
 - **Notas:** usamos el mismo de `warehouse_id`?
   Id del warehouse de la SO. `3`: Houston. `243`: Site 10135.
-- **Decision:** preguntar a anuar
+- **Decision:** ⚠️
 
 ### `master_id`
 - **Descripción:** Id de la master company, poner `1`.
