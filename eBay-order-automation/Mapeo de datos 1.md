@@ -33,7 +33,7 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 
 ### `customer_id`
 - **Descripción:** Id de cliente, referente a su registro en la tabla `users`.
-- **Notas:** 
+- **Notas:**
   Caso 1:  Si el nombre del usuario y la direccion de envio es exacatamente la misma a algun usuario ya registrado usar ese usuario.
   Caso 2: Crear un usuario nuevo si no se encontro y ligarlo a la company de ebay, el rol sera customer y ligarlo al rep que creo el listing (NOTA REP01: si no se tiene el id del usuario que creo el listing mapearlo mediante las inciales del SKU, ejemplo AA es Allan Arciga (tenemos que crearnos nuestro map de iniciales y ids, mencionaron que era como 3 usuarios normalmente y si es alguien mas asignarloa a william que es el jefe de esa area), llenar campos managed_by y managed_by_string(name+surname)).
 - **Decision:** ✅
@@ -50,7 +50,7 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 
 ### `rep_id`
 - **Descripción:** Id del vendedor (rep), referente a su registro en la tabla `users`.
-- **Notas:** 
+- **Notas:**
   Caso 1: Tomaremos el sku del producto y vamos a buscar en los listing para identificar el rep_id
   Caso 2: si no lo encontramos entonces aplicar NOTA "REP01"
 - **Decision:**  ✅
@@ -418,128 +418,153 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 
 ### `id`
 - **Descripción:** Automático, auto incrementable.
-- **Notas:** campo so de so_info ✅
-- **Decision:**  ✅
+- **Notas:**
+- **Decision:** ✅
+- **Columna referencia:**
 
 ### `so_id`
 - **Descripción:** Id de su SO referente a la tabla `so_info`.
 - **Notas:** campo id de so_info ✅
 - **Decision:** ✅
+- **Columna referencia:** id
 
 ### `rep_id`
 - **Descripción:** Id de la persona que crea el shipment, referente a la tabla `users`.
-- **Notas:** Quien seria?
+- **Notas:**
 - **Decision:** rep_id de la so_info ✅
+- **Columna referencia:**  rep_id
 
 ### `type`
 - **Descripción:** Establecerlo como `"MANUAL"`.
 - **Notas:** `"MANUAL"` por defecto ✅
 - **Decision:** si ✅
+- **Columna referencia:**
 
 ### `status`
 - **Descripción:** Establecerlo como `"Scheduled"`.
 - **Notas:** `"Scheduled"` por defecto y si la so queda es diferente a Reserved que status
-- **Decision:**  `"Scheduled"` ✅
+- **Decision:** `"Scheduled"` ✅
+- **Columna referencia:**
 
 ### `created_at`
 - **Descripción:** Fecha de creación del shipment, en formato datetime. Ejemplo: `2026-06-12 19:51:42`.
 - **Notas:** Fecha de creacion automatica ✅
 - **Decision:** si ✅
+- **Columna referencia:**
 
-### `carrier_id` ⚠️
+### `carrier_id` ✅
 - **Descripción:** Id del carrier referente a la tabla `carriers`.
-- **Notas:** 53 - UPS External por default?
-- **Decision:** preguntar a anuar, 51
+- **Notas:** 53 - UPS External por default
+- **Decision:** ids =51 y 53
+- **Columna referencia:** id
 
-### `carrier_string ⚠️`
+### `carrier_string `✅
 - **Descripción:** Se obtiene de su registro de `carriers`.
-- **Notas:** UPS por defecto?
-- **Decision:** preguntar a anuar, FedEx
+- **Notas:** UPS por defecto
+- **Decision:** FedEx, UPS
+- **Columna referencia:** name
 
-### `carrier_code` ⚠️
+### `carrier_code` ✅
 - **Descripción:** Se obtiene de su registro de `carriers`.
-- **Notas:** ups
-- **Decision:** ,""
-### `service_code` ⚠️
-- **Descripción:** Se obtiene de su registro de `carriers`.
-- **Notas:** ups_ground por defecto?
-- **Decision:** preguntar a anuar, fedex_ground
+- **Notas:** ups default
+- **Decision:** fedex, ups
+- **Columna referencia:** external_carrier_code
 
-### `service_string` ⚠️
+### `service_code` ✅
+- **Descripción:** Se obtiene de su registro de `carriers`.
+- **Notas:** ups_ground por defecto
+- **Decision:** [{"service_code":"ups_next_day_air_early_am","name":"UPS Next Day Air\u00ae Early","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_ground_international","name":"UPS Ground\u00ae (International)","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_worldwide_express","name":"UPS Worldwide Express\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_next_day_air","name":"UPS Next Day Air\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_worldwide_express_plus","name":"UPS Worldwide Express Plus\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_next_day_air_saver","name":"UPS Next Day Air Saver\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_2nd_day_air_am","name":"UPS 2nd Day Air AM\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_2nd_day_air_international","name":"UPS 2nd Day Air\u00ae (International)","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_2nd_day_air","name":"UPS 2nd Day Air\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_ground","name":"UPS\u00ae Ground","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_express_early_am","name":"UPS Express Early A.M. to the U.S.","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_next_day_air_international","name":"UPS Next Day Air\u00ae (International)","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_worldwide_saver","name":"UPS Worldwide Saver\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_3_day_select","name":"UPS 3 Day Select\u00ae","domestic":true,"international":true,"is_multi_package_supported":true,"is_return_supported":true}], [{"service_code":"fedex_international_priority_express","name":"FedEx International Priority\u00ae Express","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_ground","name":"FedEx Ground\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_home_delivery","name":"FedEx Home Delivery\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_2day","name":"FedEx 2Day\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_2day_am","name":"FedEx 2Day\u00ae A.M.","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_express_saver","name":"FedEx Express Saver\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_standard_overnight","name":"FedEx Standard Overnight\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_priority_overnight","name":"FedEx Priority Overnight\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_first_overnight","name":"FedEx First Overnight\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_economy_international","name":"FedEx International Economy\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_ground_international","name":"FedEx International Ground\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_international_economy","name":"FedEx International Economy\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_international_priority","name":"FedEx International Priority\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_international_first","name":"FedEx International First\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true}]
+- **Columna referencia:** service_type objeto service_code
+
+### `service_string` ✅
 - **Descripción:** Se obtiene de su registro de `carriers`.
 - **Notas:** UPS® Ground por defecto?
 - **Decision:** preguntar a anuar, FedEx Ground®
+- **Columna referencia:** service_type objeto name
 
-### `bill_account_number ⚠️`
+### `bill_account_number `✅
 - **Descripción:** Bill account de envío.
-- **Notas:** valor de external_account_number en tabla carriers ???
+- **Notas:** valor de external_account_number en tabla carriers
 - **Decision:** preguntar a anuar, ups=XJ2887, fedex=341701198
+- **Columna referencia:** external_account_number
 
 ### `payment_type`
 - **Descripción:** `"Sender"` o `"Recipient"`.
-- **Notas:** Sender por defecto?
+- **Notas:** Sender por defecto, campo de la tabla carriers
 - **Decision:** `"Sender"` ✅
+- **Columna referencia:** payment_type
 
 ### `declared_value`
 - **Descripción:** Opcional si se quiere establecer un valor de mercancía. Por default `0.00`.
-- **Notas:** `0.00` por default?
+- **Notas:** `0.00` por default
 - **Decision:** Cuando sea mayor de 999 se declara el valor del total de la orden de venta, y si es menor entonces `0.00` ✅
+- **Columna referencia:**
 
 ### `unit_measurement`
 - **Descripción:** Establecer `"Lbs"`.
-- **Notas:** "Lbs" por default?
+- **Notas:** "Lbs" por default
 - **Decision:** "Lbs" ✅
+- **Columna referencia:**
 
 ### `unit_dimension`
 - **Descripción:** Establecer `"inch"`.
 - **Notas:** `"inch"` por default?
 - **Decision:** `"inch"` ✅
+- **Columna referencia:**
 
 ### `locations_id`
-- **Descripción:** De dónde sale el envío. `3`: Houston. `243`: Site 10135.
-- **Notas:** usamos el mismo de `warehouse_id`? YES
-  Id del warehouse de la SO. `3`: Houston. `243`: Site 10135.
+- **Descripción:** De dónde sale el envío.  campo en la tabla locations y se obtiene desde la tabla inventory
+- **Notas:** usamos el mismo de `warehouse_id`del producto
+  Id del warehouse del inventory
 - **Decision:** `warehouse_id` la misma logica ✅
+- **Columna referencia:** en locations = id, en inventory = warehouse_id
 
 ### `signature`
 - **Descripción:** Establecer `"No Signature"`.
 - **Notas:** `"No Signature"` por default ✅
 - **Decision:** `"No Signature"` ✅
+- **Columna referencia:**
 
 ### `to_address`
 - **Descripción:** Dirección línea 1 de destino.
 - **Notas:** addressLine1 de ebay ✅
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine1]
 - **Decision:** Si ✅
+- **Columna referencia:**
 
 ### `to_address_2`
 - **Descripción:** Dirección línea 2 de destino.
 - **Notas:** Si viene el addressLine2 de ebay se lo ponemos, si no va null.
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine2]
 - **Decision:** Si ✅
+- **Columna referencia:**
 
 ### `to_city`
 - **Descripción:** Ciudad de destino.
 - **Notas:** city de ebay ✅
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.city]
 - **Decision:** Si ✅
+- **Columna referencia:**
 
 ### `to_company`
 - **Descripción:** Company de destino.
 - **Notas:** "EBAY" por defecto?
 - **Decision:** "EBAY" ✅
+- **Columna referencia:**
 
 ### `to_country`
 - **Descripción:** País de destino.
 - **Notas:** countryCode de ebay ✅
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode]
 - **Decision:** Si ✅
+- **Columna referencia:**
 
 ### `to_name`
 - **Descripción:** Persona que recibe.
 - **Notas:** fullName de ebay ✅
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.fullName]
 - **Decision:** Si ✅
+- **Columna referencia:**
 
 ### `to_phone`
 - **Descripción:** Teléfono de destino.
@@ -547,81 +572,94 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
   En caso de no estar dispoonible no lo ponemos?
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.primaryPhone.phoneNumber]
 - **Decision:** Si ✅
+- **Columna referencia:**
 
 ### `to_state`
 - **Descripción:** Estado de destino. Tiene que ser abreviatura, ejemplo: `NY`, `CA`, `TX`.
 - **Notas:** stateOrProvince de ebay ✅
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince]
 - **Decision:** Si ✅
+- **Columna referencia:**
 
 ### `to_postalcode`
 - **Descripción:** Código postal de destino.
 - **Notas:** postalCode de ebay ✅
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.postalCode]
 - **Decision:** Si ✅
+- **Columna referencia:**
 
-### `from_address`
+### `from_address`✅
 - **Descripción:** Dirección línea 1 remitente.
-- **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** ⚠️
+- **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
+- **Decision:**
+- **Columna:** address
 
-### `from_address_2`
+### `from_address_2`✅
 - **Descripción:** Dirección línea 2 remitente.
-- **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** ⚠️
+- **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
+- **Decision:**
+- **Columna:** address2
 
-### `from_city`
+### `from_city`✅
 - **Descripción:** Ciudad remitente.
-- **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** ⚠️
+- **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
+- **Decision:**
+- **Columna:** city
 
-### `from_company`
+### `from_company`✅
 - **Descripción:** Compañía remitente.
-- **Notas:** "GreenTek Solutions, LLC" por default?
-- **Decision:** ⚠️
+- **Notas:** "GreenTek Solutions, LLC" por default, usamos los datos del registro de la tabla companies (id) con referencia de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
+- **Decision:**
+- **Columna:** location(companies_id), companies (name)
 
-### `from_country`
+### `from_country`✅
 - **Descripción:** País remitente.
-- **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** ⚠️
+- **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
+- **Decision:**
+- **Columna:** country
 
-### `from_name`
+### `from_name`✅
 - **Descripción:** Nombre remitente.
-- **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
+- **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
 - **Decision:** ⚠️
+- **Columna:** name
 
-### `from_phone`
+### `from_phone`✅
 - **Descripción:** Teléfono remitente.
-- **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** ⚠️
+- **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
+- **Decision:**
+- **Columna:** phone
 
-### `from_state`
+### `from_state`✅
 - **Descripción:** Estado remitente. Tiene que ser abreviatura, ejemplo: `NY`, `CA`, `TX`.
-- **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** ⚠️
+- **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
+- **Decision:** 
+- **Columna:** colonia
 
-### `from_postalcode`
+### `from_postalcode`✅
 - **Descripción:** Código postal remitente.
-- **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** ⚠️
+- **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
+- **Decision:** 
+- **Columna:** zip_code
 
 ### `email`
 - **Descripción:** Email para envío (email cliente).
 - **Notas:** email del cliente que nos de ebay (email haseado) ✅
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.email]
-- **Decision:** Si ✅
+- **Decision:** Si 
+- **Columna:** 
 
-### `shipfromlocation_id`
+### `shipfromlocation_id`✅
 - **Descripción:** Si se envía desde Houston poner `3`; si se envía desde Site10135 poner `243`.
-- **Notas:** usamos el mismo de `warehouse_id`?
-  Id del warehouse de la SO. `3`: Houston. `243`: Site 10135.
-- **Decision:** ⚠️
+- **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
+- **Decision:**
+- **Columna referencia:** id
 
 ### `master_id`
 - **Descripción:** Id de la master company, poner `1`.
 - **Notas:** 1 por default?
 - **Decision:** Si ✅
-
+- **Columna referencia:**
 ---
 
 ## Campos en `inventory`
@@ -629,51 +667,61 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
 Estos campos aparecen en las instrucciones de reservar item y existen en la tabla `inventory`.
 
 ### `so`
-- **Descripción:** Poner el número de orden de la SO.
+- **Descripción:** Poner el número de orden (so) de la tabla so_info.
 - **Notas:** ✅
 - **Decision:** Si ✅
+- **Columna referencia:** id 
 
 ### `so_id`
 - **Descripción:** El id de la SO referente a su tabla `so_info`.
 - **Notas:** ✅
 - **Decision:** Si ✅
+- **Columna referencia:** id
 
 ### `unitprice`
 - **Descripción:** Precio de venta del inventory reservado.
 - **Notas:** query ony
 - **Decision:** Si ✅
+- **Columna referencia:**
 
 ### `status`
 - **Descripción:** Cambiar a `Reserved` al reservar el item.
 - **Notas:** ✅
 - **Decision:** Si ✅
+- **Columna referencia:**
 
 ### `datereserved`
 - **Descripción:** Fecha de cuando fue reservado el inventory.
 - **Notas:** ✅
 - **Decision:** Si ✅
+- **Columna referencia:**
 
 ### `datereserved2`
 - **Descripción:** Fecha de cuando fue reservado el inventory.
 - **Notas:** ✅
 - **Decision:** Si ✅
+- **Columna referencia:**
 
 ### `reservedbyuser_id`
 - **Descripción:** Id del usuario que está reservando, referente a la tabla `users`.
-- **Notas:** id del rep que creo el listing? YES
+- **Notas:** id del rep que creo el listing
 - **Decision:** rep_id ✅
+- **Columna referencia:** rep_id
 
 ### `reservedby`
 - **Descripción:** Iniciales del usuario que está reservando. Ejemplo: Anuar Garcia = `AG`. Si usamos usuario sistema iran esas iniciales
 - **Notas:** ✅
-- **Decision:**  De acuerdo al rep_id de la so_info ✅
+- **Decision:** De acuerdo al rep_id de la so_info ✅
+- **Columna referencia:** rep_id
 
 ### `soline`
 - **Descripción:** Número de su línea en la SO. Se obtiene el valor `soline` de la SO, se suma `+1`, y también se incrementa `soline` en la `so_info` relacionada.
 - **Notas:** Es la linea que respresenta en la so, si es el primer producto que se agrego a la so tendra el 1, si es el 2 tendra el 2 y asi sucesivamente, es para identificar que producto de todos los que se agregaron a la so es.
 - **Decision:** Revisar notas ✅
+- **Columna referencia:**
 
 ### `quantity`
-- **Descripción:** Número de productos. Generalmente se pone `1`; si hay 20 laptops se desglosan y a cada una se le asigna una `soline`.
+- **Descripción:** Número de productos. Siempre se pone `1`; si hay 20 laptops se desglosan y a cada una se le asigna una `soline`.
 - **Notas:** query ony ✅
 - **Decision:** ✅
+- **Columna referencia:**
