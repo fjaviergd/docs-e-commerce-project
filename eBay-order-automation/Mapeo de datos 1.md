@@ -520,42 +520,43 @@ $margin_percentage = number_format($margin_percentage, 2, '.', '');
 
 ---
 
+
 ## Campos en `shipment`
 
 ### `id`
 - **Descripción:** Automático, auto incrementable.
 - **Notas:**
-- **Decision:** ✅
-- **Columna referencia:**
+- **Decision:** ✅ ✅
+- **Columna referencia:** 
 
 ### `so_id`
 - **Descripción:** Id de su SO referente a la tabla `so_info`.
-- **Notas:** campo id de so_info ✅
-- **Decision:** ✅
+- **Notas:** 
+- **Decision:** Campo so_id se le asigna el campo id de so_info✅ ✅
 - **Columna referencia:** id
 
 ### `rep_id`
 - **Descripción:** Id de la persona que crea el shipment, referente a la tabla `users`.
 - **Notas:**
-- **Decision:** rep_id de la so_info ✅
+- **Decision:** Campo rep_id de shipment se le asigna el valor que tenga el rep_id de la so_info ✅✅
 - **Columna referencia:**  rep_id
 
 ### `type`
 - **Descripción:** Establecerlo como `"MANUAL"`.
 - **Notas:** `"MANUAL"` por defecto ✅
-- **Decision:** si ✅
+- **Decision:** si ✅✅
 - **Columna referencia:**
 
 ### `status`
 - **Descripción:** Establecerlo como `"Scheduled"`.
 - **Notas:** `"Scheduled"` por defecto y si la so queda es diferente a Reserved que status
-- **Decision:** `"Scheduled"` ✅
+- **Decision:** `"Scheduled"` ✅✅
 - **Columna referencia:**
 
 ### `created_at`
 - **Descripción:** Fecha de creación del shipment, en formato datetime. Ejemplo: `2026-06-12 19:51:42`.
 - **Notas:** Fecha de creacion automatica ✅
-- **Decision:** si ✅
+- **Decision:** si ✅✅
 - **Columna referencia:**
 
 ### `carrier_id` ✅
@@ -597,79 +598,79 @@ $margin_percentage = number_format($margin_percentage, 2, '.', '');
 ### `payment_type`
 - **Descripción:** `"Sender"` o `"Recipient"`.
 - **Notas:** Sender por defecto, campo de la tabla carriers
-- **Decision:** `"Sender"` ✅
+- **Decision:** `"Sender"` ✅✅
 - **Columna referencia:** payment_type
 
 ### `declared_value`
 - **Descripción:** Opcional si se quiere establecer un valor de mercancía. Por default `0.00`.
 - **Notas:** `0.00` por default
-- **Decision:** Cuando sea mayor de 999 se declara el valor del total de la orden de venta, y si es menor entonces `0.00` ✅
+- **Decision:** Cuando sea mayor de 999 se declara el valor del total de la orden de venta, y si es menor entonces `0.00` ✅✅
 - **Columna referencia:**
 
 ### `unit_measurement`
 - **Descripción:** Establecer `"Lbs"`.
 - **Notas:** "Lbs" por default
-- **Decision:** "Lbs" ✅
+- **Decision:** "Lbs" ✅✅
 - **Columna referencia:**
 
 ### `unit_dimension`
 - **Descripción:** Establecer `"inch"`.
 - **Notas:** `"inch"` por default?
-- **Decision:** `"inch"` ✅
+- **Decision:** `"inch"` ✅✅
 - **Columna referencia:**
 
 ### `locations_id`
 - **Descripción:** De dónde sale el envío.  campo en la tabla locations y se obtiene desde la tabla inventory
 - **Notas:** usamos el mismo de `warehouse_id`del producto
   Id del warehouse del inventory
-- **Decision:** `warehouse_id` la misma logica ✅
-- **Columna referencia:** en locations = id, en inventory = warehouse_id
+- **Decision:** Campo locations_id se le asignara el valor de `warehouse_id` del registro creado en so_info. ✅✅
+- **Columna referencia:**
 
 ### `signature`
 - **Descripción:** Establecer `"No Signature"`.
-- **Notas:** `"No Signature"` por default ✅
-- **Decision:** `"No Signature"` ✅
+- **Notas:** `"No Signature"` por default
+- **Decision:** `"No Signature"` ✅✅
 - **Columna referencia:**
 
 ### `to_address`
 - **Descripción:** Dirección línea 1 de destino.
-- **Notas:** addressLine1 de ebay ✅
+- **Notas:** addressLine1 de ebay 
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine1]
-- **Decision:** Si ✅
+- **Decision:** Si ✅✅
 - **Columna referencia:**
 
 ### `to_address_2`
 - **Descripción:** Dirección línea 2 de destino.
 - **Notas:** Si viene el addressLine2 de ebay se lo ponemos, si no va null.
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine2]
-- **Decision:** Si ✅
+- **Decision:** Si ✅✅
 - **Columna referencia:**
 
 ### `to_city`
 - **Descripción:** Ciudad de destino.
-- **Notas:** city de ebay ✅
+- **Notas:** city de ebay 
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.city]
-- **Decision:** Si ✅
+- **Decision:** Si ✅✅
 - **Columna referencia:**
 
 ### `to_company`
 - **Descripción:** Company de destino.
 - **Notas:** "EBAY" por defecto?
-- **Decision:** "EBAY" ✅
+- **Decision:** "EBAY" ✅✅
 - **Columna referencia:**
 
 ### `to_country`
 - **Descripción:** País de destino.
-- **Notas:** countryCode de ebay ✅
+- **Notas:** countryCode de ebay 
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode]
-- **Decision:** Si ✅
+- **Decision:** Si ✅✅
 - **Columna referencia:**
 
 ### `to_name`
 - **Descripción:** Persona que recibe.
-- **Notas:** fullName de ebay ✅
+- **Notas:** fullName de ebay
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.fullName]
-- **Decision:** Si ✅
+- **Decision:** Si ✅✅
 - **Columna referencia:**
 
 ### `to_phone`
@@ -677,94 +678,93 @@ $margin_percentage = number_format($margin_percentage, 2, '.', '');
 - **Notas:** phoneNumber que viene de ebay.
   En caso de no estar dispoonible no lo ponemos?
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.primaryPhone.phoneNumber]
-- **Decision:** Si ✅
+- **Decision:** Si ✅✅
 - **Columna referencia:**
 
 ### `to_state`
 - **Descripción:** Estado de destino. Tiene que ser abreviatura, ejemplo: `NY`, `CA`, `TX`.
-- **Notas:** stateOrProvince de ebay ✅
+- **Notas:** stateOrProvince de ebay
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince]
-- **Decision:** Si ✅
+- **Decision:** Si ✅✅
 - **Columna referencia:**
 
 ### `to_postalcode`
 - **Descripción:** Código postal de destino.
-- **Notas:** postalCode de ebay ✅
+- **Notas:** postalCode de ebay 
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.postalCode]
-- **Decision:** Si ✅
+- **Decision:** Si ✅✅
 - **Columna referencia:**
 
-### `from_address`✅
+### `from_address`
 - **Descripción:** Dirección línea 1 remitente.
 - **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
-- **Decision:**
-- **Columna:** address
+- **Decision:** Campo from_address se llena con el campo shipfromaddress1 del registro creado en la so_info. ✅✅
+- **Columna:** shipfromaddress1
 
-### `from_address_2`✅
+### `from_address_2`
 - **Descripción:** Dirección línea 2 remitente.
 - **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
-- **Decision:**
-- **Columna:** address2
+- **Decision:** Campo from_address_2 se llena con el campo shipfromaddress2 del registro creado en la so_info. ✅✅
+- **Columna:** shipfromaddress2
 
-### `from_city`✅
+### `from_city`
 - **Descripción:** Ciudad remitente.
 - **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
-- **Decision:**
-- **Columna:** city
+- **Decision:** Campo from_city se llena con el campo shipfromcity del registro creado en la so_info, revisar. ✅✅
+- **Columna:** shipfromcity
 
-### `from_company`✅
+### `from_company`
 - **Descripción:** Compañía remitente.
-- **Notas:** "GreenTek Solutions, LLC" por default, usamos los datos del registro de la tabla companies (id) con referencia de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
-- **Decision:**
-- **Columna:** location(companies_id), companies (name)
+- **Notas:** "GreenTek Solutions, LLC" por default
+- **Decision:** Campo from_company se le asigna "GreenTek Solutions, LLC" por defecto ✅✅ 
+- **Columna:**
 
-### `from_country`✅
+### `from_country`
 - **Descripción:** País remitente.
 - **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
-- **Decision:**
-- **Columna:** country
+- **Decision:** Campo from_country se llena con el campo shipfromcountry del registro creado en la so_info.✅✅
+- **Columna:** shipfromcountry
 
-### `from_name`✅
+### `from_name`
 - **Descripción:** Nombre remitente.
 - **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
-- **Decision:** ⚠️
-- **Columna:** name
+- **Decision:** Campo `from_name` se llena con el campo shipfromcontact del registro creado en la so_info, es decir el "name + surname" que se encontro de la tabla users de acuerdo al rep_id. Revisar "Nota 04" ✅✅
+- **Columna:** shipfromcontact
 
-### `from_phone`✅
+### `from_phone`
 - **Descripción:** Teléfono remitente.
 - **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
-- **Decision:**
+- **Decision:** Campo from_phone se llena con el campo shipfromphone del registro creado en la so_info. ✅✅
 - **Columna:** phone
 
-### `from_state`✅
+### `from_state`
 - **Descripción:** Estado remitente. Tiene que ser abreviatura, ejemplo: `NY`, `CA`, `TX`.
 - **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
-- **Decision:** 
-- **Columna:** colonia
+- **Decision:** Campo from_state se llena con el campo `shipfromstate` del registro creado en la so_info. ✅✅
+- **Columna:** `shipfromstate`
 
-### `from_postalcode`✅
+### `from_postalcode`
 - **Descripción:** Código postal remitente.
 - **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
-- **Decision:** 
-- **Columna:** zip_code
+- **Decision:** Campo from_postalcode se llena con el campo `shipfrompostalcode` del registro creado en la so_info. ✅✅
+- **Columna:** shipfrompostalcode
 
 ### `email`
 - **Descripción:** Email para envío (email cliente).
-- **Notas:** email del cliente que nos de ebay (email haseado) ✅
-  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.email]
-- **Decision:** Si 
+- **Notas:** email del cliente que nos de ebay (email haseado) 
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.email] ✅✅
 - **Columna:** 
 
-### `shipfromlocation_id`✅
+### `shipfromlocation_id`
 - **Descripción:** Si se envía desde Houston poner `3`; si se envía desde Site10135 poner `243`.
 - **Notas:** usamos los datos del registro de la tabla location (id) de acuerdo al warehouse_id en la tabla inventoy
-- **Decision:**
-- **Columna referencia:** id
+- **Decision:** Campo shipfromlocation_id se le asignara el valor de `warehouse_id`del registro creado en la so_info ✅✅
+- **Columna referencia:** warehouse_id
 
 ### `master_id`
 - **Descripción:** Id de la master company, poner `1`.
 - **Notas:** 1 por default?
-- **Decision:** Si ✅
+- **Decision:** Campo master_id asignar 1 por default ✅✅
 - **Columna referencia:**
 ---
 
@@ -774,60 +774,60 @@ Estos campos aparecen en las instrucciones de reservar item y existen en la tabl
 
 ### `so`
 - **Descripción:** Poner el número de orden (so) de la tabla so_info.
-- **Notas:** ✅
-- **Decision:** Si ✅
+- **Notas:** 
+- **Decision:** Si ✅✅
 - **Columna referencia:** id 
 
 ### `so_id`
 - **Descripción:** El id de la SO referente a su tabla `so_info`.
-- **Notas:** ✅
-- **Decision:** Si ✅
-- **Columna referencia:** id
+- **Notas:** 
+- **Decision:** Si ✅✅
+- **Columna referencia:** id de so_info
 
 ### `unitprice`
 - **Descripción:** Precio de venta del inventory reservado.
 - **Notas:** query ony
-- **Decision:** Si ✅
+- **Decision:** Si ✅ ✅
 - **Columna referencia:**
 
 ### `status`
 - **Descripción:** Cambiar a `Reserved` al reservar el item.
-- **Notas:** ✅
-- **Decision:** Si ✅
+- **Notas:**
+- **Decision:** Si, revisar "Nota 03" ✅✅
 - **Columna referencia:**
 
 ### `datereserved`
-- **Descripción:** Fecha de cuando fue reservado el inventory.
-- **Notas:** ✅
-- **Decision:** Si ✅
+- **Descripción:** Fecha de cuando fue reservado el inventory en formato string
+- **Notas:** Ejemplo 06/25/2026 12:13:12 PM
+- **Decision:** Si ✅ ✅
 - **Columna referencia:**
 
 ### `datereserved2`
-- **Descripción:** Fecha de cuando fue reservado el inventory.
-- **Notas:** ✅
-- **Decision:** Si ✅
+- **Descripción:** Fecha de cuando fue reservado el inventory en formato datetime
+- **Notas:** Ejemplo: 2026-06-25 12:13:12
+- **Decision:** Si ✅✅
 - **Columna referencia:**
 
 ### `reservedbyuser_id`
 - **Descripción:** Id del usuario que está reservando, referente a la tabla `users`.
 - **Notas:** id del rep que creo el listing
-- **Decision:** rep_id ✅
+- **Decision:** Campo reservedby se llena con el valor de rep_id de la so_info ✅✅
 - **Columna referencia:** rep_id
 
 ### `reservedby`
-- **Descripción:** Iniciales del usuario que está reservando. Ejemplo: Anuar Garcia = `AG`. Si usamos usuario sistema iran esas iniciales
-- **Notas:** ✅
-- **Decision:** De acuerdo al rep_id de la so_info ✅
-- **Columna referencia:** rep_id
+- **Descripción:** Iniciales del usuario que está reservando. 
+- **Notas:** 
+- **Decision:** Campo reservedby se llena con el valor de rep_id de la so_info, se va a buscar el id del usuario identificado y se tomara su name y surname y se pondran sus inciales, ejemplo: Anuar Garcia = `AG`. Si usamos usuario sistema iran esas iniciales ✅✅
+- **Columna referencia:** rep_id, name y surname
 
 ### `soline`
 - **Descripción:** Número de su línea en la SO. Se obtiene el valor `soline` de la SO, se suma `+1`, y también se incrementa `soline` en la `so_info` relacionada.
 - **Notas:** Es la linea que respresenta en la so, si es el primer producto que se agrego a la so tendra el 1, si es el 2 tendra el 2 y asi sucesivamente, es para identificar que producto de todos los que se agregaron a la so es.
-- **Decision:** Revisar notas ✅
+- **Decision:** Revisar notas ✅✅
 - **Columna referencia:**
 
 ### `quantity`
 - **Descripción:** Número de productos. Siempre se pone `1`; si hay 20 laptops se desglosan y a cada una se le asigna una `soline`.
-- **Notas:** query ony ✅
-- **Decision:** ✅
+- **Notas:** query ony 
+- **Decision:** ✅✅
 - **Columna referencia:**
