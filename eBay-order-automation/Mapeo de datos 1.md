@@ -1,79 +1,125 @@
 # Campos Sales Orders y Shipments - verificación contra tabla
 
-_Hasta que punto quieren que se haga esta implementacion?_
-Tenemos que hacer la reserva de productos?
-Comenzamos el proceso del shipment?
-_Vamos a reemplazar el uso de shiprush? esa herramienta solo da la direccion del cliente de ebay y genera la label?_
-_Con la automatizacion lo que haremos es saber en que momento se hace la compra, traer en ese momento mediante su api de ebay los datos de esa compra como la direccion y datos generales del envio._
-_Si tenemos toda esa informacion practicamente tendriamos los datos completos para generar la label. Solo haria falta alguna informacion extra que tiene que ser manual como la medida de los paquetes, etc._
+
+#### Notas:
+
+Nota 01: Como manejar el customer
+Para la asociacion del cliente o customer se requiere de un registro en la tabla user, este registro puede ser que exista o que se requiera crear. Describo los dos casos aqui:
+- Caso 1:  
+  Si [fulfillmentStartInstructions[0].shippingStep.shipTo.fullName] de la response de ebay coincide con name + surname de la tabla users
+  y la direccion [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine1] de la response de ebay coincide con address de la tabla users
+  Entonces usar el id del usuario encontrado, si se encuentra mas de uno usar el primero.
+- Caso 2: Si con el caso 1 no se encuentra ningun registros entonces
+	  Crear un usuario nuevo en users
+	- Asignar en el campo companies_id el id=1293 de la tabla companies
+	- Asignar en el campo role el valor "CUSTOMER" 
+	- Asignar en el campo managed_by el id del rep que creo el listing 
+	- Asignar en el campo managed_by_string el "name + surname" del rep que creo el listing
 
 ---
 
-Notas:
+Nota 02: Como manejar el rep
+Para poder asignar un rep se podra hacer en dos escenerios:
+Caso 1: Tomar el valos del sku [data.lineItems[0].sku] y buscarlo en la tabla ecommerce_listings de la base de datos central, si encontramos ese registro tomamos el valor de dashboard_user_id ese sera nuestro valor de rep_id en la tabla so_info.
+Caso 2: Si no encontramos el sku del paso 1 entonces vamos a consultar una tabla hardcoded en la que vamos a mapear las inciales y el id de 3 usuarios, quedaria algo asi:
+
+const users = [
+  {
+    id: 100,
+    initials: 'AA',
+    name: 'Allan',
+    surname: 'Arciga',
+  },
+  {
+    id: 101,
+    initials: 'WB',
+    name: 'William',
+    surname: 'Birch',
+  },
+  {
+    id: 8636,
+    initials: 'UO',
+    name: 'Ushie',
+    surname: 'Ogar',
+  },
+];
+La forma en que funcionara es que tomaremos el SKU de [data.lineItems[0].sku] y vamos a usar los primeros dos caracteres que usualmente son las initials del usuario y las vamos a bscar en ese array map y sabremos que usuario es el rep_id. En caso de que no sea ninguno de esos 3 el rep_id por defecto sera WB, es decir William Birch.
+
+En cualquiera de los dos casos vamos a saber el id del usuario rep, con eso podemos buscar el registro en la tabla users mediante la columna id y sabremos mas datos como el name, surname, email, role, phone, etc. Tomalo en cuanta para los campos donde requerimos de mas informacion del rep.
+
+---
+
+Nota 03: Como manejar la reserva de productos
+El proceso de reserva de productos consiste en asociar los productos/registros de la tabla inventory con el registro que se hara en so_info. La forma en que podemos saber cuales registros o item se van a asociar puede ser de varias formas.
+
+Caso 1: Al buscar el [data.lineItems[0].sku] en ecommerce_listings SI se encontro podemos saber cuales son esos items. 
+- La tabla ecommerce_listings esta relacionada con ecommerce_listings_inventory. Tomaremos en valor del id de ecommerce_listings y buscaremos todos los registros de ecommerce_listings_inventory mediante su campo listing_id. Tomaremos o buscaremos la cantidad que diga en [data.lineItems[0].quantity]. Por ejemplo puede que el listing tenga 10 productos pero solo compraron 5 entonces buscaremos los primeros 5. Este proceso esta ligado a que valor se le asignara al campo status del so_info, en caso de que se encuentren todos los items es decir que se encuentren/reserven la cantidad que dice [data.lineItems[0].quantity] a status se le asignara el valor "Reserved". Si solo se encuentran/reservan algunos items por ejemplo de los 5 solo se encuentran de 1 a 4 entonces se asignara a status el valor "Partially Reserved". Si no se encuentra/reserva ningun item entonces el status se le asignara el valor "Open".
+- Otro campo que se tiene que definir con el primer producto que se reserve es el valor del warehouse_id de la so_info, a este campo se le pone el valor que el primer producto tenga en su campo warehouse_id.
+Caso 2: Al buscar el [data.lineItems[0].sku] en ecommerce_listings NO se encontro entonces no haremos la reserva y el status quedara solo como "Open". Aqui como no hay productos se tiene que asignar la warehouse_id de la so_info con el valor 3 por defecto.  
+
+---
+Nota 04: Como saber la ubicación de origen
+A lo largo de todo el proceso en diferentes tablas se requiere saber la direccion de donde salen las cosas, o de donde esta la compañia que envia el paquete o para saber su contacto. En esos casos se va a tomar el warehouse_id y se buscara mediante el id el registro en la tabla locations, el registro que se encuentre tiene datos como: name, address, address2, country, state, city, phone, sip_code, etc, todos esos campos se van a mapear a algunos campos especificos que ya te documentare. Tambien se puede revisar la descripcion de la tabla locations para saber todos los campos que tiene.
+
+---
 En caso de que sea un listing que se publico con nuestro metodo vamos a buscar el sku y encontraremos los product inventory, vamos a revisar cuales fueron los producto inventory que entraron primero al listing y esos vamos a reservar.
 En caso de no encontrarlos es porque se enlistaron con el metodo viejo y no vamos a poder reservarlos, tendra que quedarse la so como open.
 
+
 ---
-
-Este archivo contiene solo el nombre del campo, su descripción, notas y si el campo existe en la tabla de base de datos correspondiente.
-
 ---
 
 ## Campos en `so_info`
 
 ### `id`
 - **Descripción:** Automático, incrementable.
-- **Notas:** ✅
-- **Decision:** ✅
+- **Notas:** 
+- **Decision:** Campo `id` se llena de forma automatica ✅ ✅
 
 ### `so`
 - **Descripción:** Número de SO. Tienen que poner un número más uno al más reciente.
-- **Notas:** ✅
-- **Decision:** ✅
+- **Notas:** 
+- **Decision:** Campo `so` se llna con el resultado de consultar el numero de `so` del registro de so_info mas reciente y se le suma 1 (hacerlo en el ultimo momento para no tardar demasiado y minimizar el riesgo de repetir) ✅ ✅
 
 ### `customer_id`
 - **Descripción:** Id de cliente, referente a su registro en la tabla `users`.
-- **Notas:**
-  Caso 1:  Si el nombre del usuario y la direccion de envio es exacatamente la misma a algun usuario ya registrado usar ese usuario.
-  Caso 2: Crear un usuario nuevo si no se encontro y ligarlo a la company de ebay, el rol sera customer y ligarlo al rep que creo el listing (NOTA REP01: si no se tiene el id del usuario que creo el listing mapearlo mediante las inciales del SKU, ejemplo AA es Allan Arciga (tenemos que crearnos nuestro map de iniciales y ids, mencionaron que era como 3 usuarios normalmente y si es alguien mas asignarloa a william que es el jefe de esa area), llenar campos managed_by y managed_by_string(name+surname)).
-- **Decision:** ✅
+- **Notas:** 
+- **Decision:** Campo customer_id se llena de acuerdo con "Nota 01: Como manejar el customer" ✅ ✅
 
 ### `clientuser_id`
 - **Descripción:** Id de cliente, referente a su registro en la tabla `users` (el mismo que `customer_id`).
-- **Notas:** Mismo tema de arriba ✅
-- **Decision:** Mismo tema de arriba ✅
+- **Notas:** 
+- **Decision:** Campo clientuser_id se llena con el valor que se asigno a customer_id ✅ ✅
 
 ### `terms_id`
 - **Descripción:** Id de terms, referente a su registro en la tabla `terms`.
 - **Notas:** Siempre va Paypal (id 20)? Yes
-- **Decision:** Paypal ✅
+- **Decision:** Campo terms_id se llena con el valor 20 ✅ ✅
 
 ### `rep_id`
 - **Descripción:** Id del vendedor (rep), referente a su registro en la tabla `users`.
-- **Notas:**
-  Caso 1: Tomaremos el sku del producto y vamos a buscar en los listing para identificar el rep_id
-  Caso 2: si no lo encontramos entonces aplicar NOTA "REP01"
-- **Decision:**  ✅
+- **Notas:** 
+- **Decision:** Campo rep_id se llena con el valor de "Nota 02: Como manejar el rep" ✅ ✅
 
 ### `contactcontactuser_id`
 - **Descripción:** Id de contacto de compra (puede ser el mismo de `customer_id`), referente a su registro en la tabla `users`.
-- **Notas:** Le ponemos el mismo de customer_id?
-- **Decision:** Si ✅
+- **Notas:** Le ponemos el mismo de customer_id? YES
+- **Decision:** Campo contactcontactuser_id se llena con el valor que se asigno a customer_id ✅ ✅
 
 ### `conditions_id`
 - **Descripción:** Id de la condición de venta, referente a su registro en la tabla `conditions`.
-- **Notas:** Ponemos siempre USED(id:9)?
-- **Decision:** USED ✅
+- **Notas:** Ponemos siempre USED(id:9)? YES
+- **Decision:** Campos conditions_id se llena con el valor 9 ✅✅
 
 ### `shipfromcontactuser_id`
 - **Descripción:** Id del usuario de contacto de la sección Shipping From, referente a su registro en la tabla `users`.
 - **Notas:** la persona que hizo la so, es decir el rep_id
-- **Decision:** rep_id ✅
+- **Decision:** Campo shipfromcontactuser_id se llena con el valor que se asigno a rep_id ✅ ✅
 
 ### `shiptoclientuser_id`
 - **Descripción:** Id del usuario de contacto de la sección Shipping To, referente a su registro en la tabla `users`.
 - **Notas:** Le ponemos el mismo de customer_id?
-- **Decision:** Si customer_id ✅
+- **Decision:** Campo shiptoclientuser_id se llena con el valor que se asigno a customer_id ✅ ✅
 
 ### `status`
 - **Descripción:** Status de la Sale Order.
@@ -86,331 +132,391 @@ Este archivo contiene solo el nombre del campo, su descripción, notas y si el c
   Caso 1: Reserved si reservamos todos los items
   Caso 2: Partially Reserved si solo unos items se reservan
   Caso 3: Open si no logramos reservarlos porque no identificamos que items se tienen que reservar
-- **Decision:**  ✅
+- **Decision:**  Campo status se llena de acuerdo a lo que se dice en la "Nota 03" ✅ ✅
 
 ### `shipstatus`
 - **Descripción:** Status del Shipment
   Default para un SO nuevo: `Open`
   Cuando ya tiene un shipment agendado: `Scheduled`.
 - **Notas:** Scheduled porque vamos a crear el shipment
-- **Decision:** Scheduled  ✅
+- **Decision:** Campo shipstatus se llena con el valor "Scheduled"  ✅ ✅
 
 ### `states_id`
 - **Descripción:** Estado para la aplicación de taxes. Va el id del state relacionado con el `state` del `shipment to`.
-- **Notas:** ✅ Hacer match entre el state que de ebay con el de esta tabla para establecer el id
-  ebayResponse: {buyer.taxAddress.stateOrProvince}
-- **Decision:**  Si  ✅
+- **Notas:** Hacer match entre el state que de ebay con el de esta tabla para establecer el id
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince] ✅ ✅
+- **Decision:**  Campo campo states_id se llena de la siguiente forma, el valor que venga en [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince] se va a tomar y se buscara en la tabla state de crm por el campo abbr. ✅ ✅ 
 
 ### `tax`
 - **Descripción:** Valor del tax.
-- **Notas:** ✅ Tomamos el valor del tax de acuerdo al states_id que identificamos
-- **Decision:** 0 ✅
+- **Notas:** Tomamos el valor del tax de acuerdo al states_id que identificamos
+- **Decision:** Campo tax se llena con "0" ✅ ✅  
 
 ### `subtotal`
 - **Descripción:** Valor de total antes de taxes.
 - **Notas:** Pondemos el valor total que nos da ebay?
   o desglosamos tomando el valor total de ebay y si tiene un state con tax le quitamos ese monto de tax y ponemos el valor calculado de esa operacion?
   ebayResponse: {pricingSummary.priceSubtotal.value}
-- **Decision:** pricingSummary.priceSubtotal.value ✅
+- **Decision:** Campo subtotal se llena con el valor de pricingSummary.priceSubtotal.value que viene de ebay ✅ ✅
 
 ### `serviches_charge`
 - **Descripción:** Valor de services a aumentar a la orden, campo Services.
 - **Notas:** 0 por default o no podemos nada?
-- **Decision:** 0.00 ✅
+- **Decision:** Campo serviches_charge se le asigna "0.00" ✅ ✅
 
 ### `misc_charge`
 - **Descripción:** Valor de Misc. Charge a aumentar a la orden, campo Misc. Charge.
 - **Notas:** 0 por default o no podemos nada?
-- **Decision:** 0.00 ✅
+- **Decision:** Campo misc_charge se le asigna "0.00" ✅ ✅
 
 ### `extracost`
 - **Descripción:** Valor de servicios de instalación a aumentar a la orden, campo Installation Cost.
 - **Notas:** 0 por default o no podemos nada?
-- **Decision:** 0.00 ✅
+- **Decision:** Campo extracost se le asigna "0.00" ✅ ✅
 
 ### `extendedcost`
 - **Descripción:** Suma del valor `unitprice` de todos los solines (inventarios).
 - **Notas:** de la forma que dices? si
-- **Decision:** Sumar el unitprice de cada uno de los items reservados ✅
+- **Decision:** Campo extendedcost se le asigna la suma del campo unitprice de cada uno de los items reservados de la tabla inventory ✅ ✅
 
 ### `estimated_cost`
 - **Descripción:** Sumar el campo `purchasecost` de todos los solines (inventories) y asignar el valor final a `estimated_cost`.
 - **Notas:** Este paso se hace con la formula? yes
-- **Decision:** Sumar el `purchasecost` de cada uno de los items reservados ✅
+- **Decision:** Campo estimated_cost se le asigna la suma del campo `purchasecost` de cada uno de los items reservados de la tabla inventory ✅ ✅
 
 ### `cleartax`
 - **Descripción:** Ajustar el valor a `0` (indicamos al sistema que los taxes están activos).
 - **Notas:** 0 si los taxes estan aplicados, 1 si hay alguna excepcion y no se tienen que aplicar taxes
-- **Decision:**  Aplicar 1 porque ninguna order va a manejar tax en listings de ebay  ✅
+- **Decision:**  Campo cleartax se llena con "1" ✅ ✅  
 
 ### `warehouse_id`
 - **Descripción:** Id del warehouse de la SO. `3`: Houston. `243`: Site 10135.
 - **Notas:** Caso 1: items de una sola locacion poner esa locacion
   Caso 2: items de varias locaciones poner el id de la primera locacion
-- **Decision:** De acuerdo a la locacion del producto asi como dice en las notas ✅
+- **Decision:** Campo warehouse_id se llena de acuerdo a como se menciona en la "Nota 03" ✅ ✅
 
 ### `reference`
 - **Descripción:** Referencia de la SO.
 - **Notas:** No aplica
-- **Decision:** Null o vaciio ✅
+- **Decision:** Campo reference se le asigna NULL  ✅✅
 
 ### `gross_margin`
-- **Descripción:** Margen calculado usando el `suppliermargin` del PO para cada soline (inventory).
-- **Notas:** Se calcula con los items ✅
-- **Decision:** Si ✅
+- **Descripción:** Margen calculado usando el `suppliermargin` del PO para cada soline (inventory). Se usa formula para sacar el gross margin.
+- **Notas:** Obtenemos el `suppliermargin` del PO para cada soline (inventory).
+
+```php
+$po_id = po_id del registro inventory;
+
+SELECT id, suppliermargin, po
+FROM po_info
+WHERE id = '$po_id'
+LIMIT 1;
+
+// Dividimos el margen del proveedor por 100 para convertirlo a porcentaje
+$suppliermargin_percentage = $suppliermargin_po / 100;
+
+// Calculamos el margen estimado
+$diff = $inventory_unitprice - $inventory_unitcost;
+
+if ($suppliermargin_percentage > 0) {
+    if ($diff > 0) {
+        $estimated_margin = $diff * ($suppliermargin_percentage);
+    } else {
+        $estimated_margin = $estimated_margin + $diff;
+    }
+} else {
+    $estimated_margin = 0;
+}
+```
+ 
+- **Decision:** Al campo `gross_margin`le asignamos el valor de `$estimated_margin`. ✅✅
 
 ### `margin_percentage`
 - **Descripción:** Porcentaje de margen calculado acumulando el profit de todos los inventories.
-- **Notas:** Seguir formula ✅
-- **Decision:** Si ✅
+- **Notas:** Iteramos cada item dentro de los solines (inventories).
+
+```php
+$po_id = po_id del registro inventory;
+
+SELECT id, suppliermargin, po
+FROM po_info
+WHERE id = '$po_id'
+LIMIT 1;
+
+// Dividimos el margen del proveedor por 100 para convertirlo a porcentaje
+$suppliermargin_percentage = $suppliermargin_po / 100;
+
+// Calculamos el margen estimado
+$diff = $inventory_unitprice - $inventory_unitcost;
+
+if ($suppliermargin_percentage > 0) {
+    if ($diff > 0) {
+        $estimated_margin = $diff * ($suppliermargin_percentage);
+    } else {
+        $estimated_margin = $estimated_margin + $diff;
+    }
+} else {
+    $estimated_margin = 0;
+}
+
+// Sumamos el unitprice total de todos los inventories de la SO
+$inventory_unitprice = $dt_inventory_data['unitprice'];
+$totalsales_sum += $inventory_unitprice;
+
+if ($profit_total > 0) {
+    $margin_percentage = $profit_total / $totalsales_sum;
+    $margin_percentage = $margin_percentage * 100;
+} else {
+    $margin_percentage = 0;
+}
+
+$margin_percentage = number_format($margin_percentage, 2, '.', '');
+
+$profit_interno = $profit_interno + $estimated_margin;
+$profit_interno = number_format($profit_interno, 2, '.', '');
+
+// Acumulamos el profit de todos los inventories
+$profit_total = $profit_interno;
+
+if ($profit_total > 0) {
+    $margin_percentage = $profit_total / $totalsales_sum;
+    $margin_percentage = $margin_percentage * 100;
+} else {
+    $margin_percentage = 0;
+}
+
+$margin_percentage = number_format($margin_percentage, 2, '.', '');
+```
+
+- **Decision:** Asignamos al campo `margin_percentage` el valor de `$margin_percentage`. ✅✅
 
 ### `profit`
 - **Descripción:** Variable `$profit_total` de la fórmula de margen.
-- **Notas:** Seguir formula ✅
-- **Decision:** Si ✅
+- **Notas:** Seguir formula de arriba 
+- **Decision:** Al campo profit se le asigna el valor de la variable $profit_total de la formula de arriba ✅✅
 
 ### `total`
 - **Descripción:** Valor total de la orden.
-- **Notas:** Seguir formula ✅
-- **Decision:** Si ✅
+- **Notas:** Seguir formula 
+- **Decision:** TODO: revisar con la response ⚠️ ⚠️ ⚠️
 
 ### `created_at`
 - **Descripción:** Fecha de creación de la SO, tipo de dato `datetime`.
-- **Notas:** Fecha automatica en datetime ✅
-- **Decision:** Si ✅
+- **Notas:** Fecha automatica en datetime 
+- **Decision:** Campo created_at se le asigna el valor de la fecha en que se crea el registro ✅ ✅
 
 ### `updated_at`
 - **Descripción:** Fecha de actualización de la SO, tipo de dato `datetime`.
-- **Notas:** Fecha automatica en datetime ✅
-- **Decision:** Si ✅
+- **Notas:** Fecha automatica en datetime 
+- **Decision:** Campo created_at se le asigna el valor de la fecha en que se crea el registro ✅ ✅
 
 ### `date`
 - **Descripción:** Fecha de creación de la SO en string `YYYY-mm-dd`, ejemplo: `2026-06-12`.
-- **Notas:** Fecha de creación de la SO en string `YYYY-mm-dd`, ejemplo: `2026-06-12`. ✅
-- **Decision:** Si ✅
+- **Notas:** Fecha de creación de la SO en string `YYYY-mm-dd`, ejemplo: `2026-06-12`.
+- **Decision:** Campo date se le asigna el valor de la fecha en que se crea el registro pero en formato string `YYYY-mm-dd` ✅ ✅
 
 ### `soline`
 - **Descripción:** Contador de line items de la SO. Iniciar en `0`; al agregar un line item a la orden aumentar este número `+1`.
 - **Notas:** Siempre sumar al hacer la reserva de los items, practicamente es la cantidad de items reservados, pero no se resta en caso de quitar siempre suma, nunca resta.
-- **Decision:**  Revisar la nota ✅
+- **Decision:**  Campo soline es la caantidad de los items que se reservaron de acuerdo a la "Nota 03"  ✅ ✅
 
 ### `client_PO_Number`
 - **Descripción:** Campo para agregar client PO del cliente.
 - **Notas:** El id de la orden que viene de ebay
-- **Decision:** id de ebay  ✅
+- **Decision:** Campo client_PO_Number se llena con el valor de campo [orderId] que viene en la response de ebay  ✅ ✅
 
 ### `type`
 - **Descripción:** Establecer el valor `so` para la SO.
-- **Notas:** Valor "so" por default ✅
-- **Decision:** Si
+- **Notas:** Valor "so" por default
+- **Decision:** El campo type se llena con el valor "so" por default  ✅ ✅
 
 ### `contactcontact`
 - **Descripción:** Nombre de cliente para el campo Contact del bloque Customer Information.
-- **Notas:** nombre del cliente que nos de ebay ✅
-  ebayResponse: [buyer.buyerRegistrationAddress.fullName]
-- **Decision:** Si  ✅
+- **Notas:** nombre del cliente que nos de ebay 
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.fullName] ✅ ✅
 
 ### `contactemail`
 - **Descripción:** Email de cliente para el campo Email del bloque Customer Information.
-- **Notas:** email del cliente que nos de ebay (email haseado) ✅
-  ebayResponse: [buyer.buyerRegistrationAddress.email]
-- **Decision:** Si  ✅
+- **Notas:** email del cliente que nos de ebay (email haseado) 
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.email] ✅✅
 
 ### `contactphone`
 - **Descripción:** Teléfono de cliente para el campo Phone del bloque Customer Information.
 - **Notas:** phoneNumber que viene de ebay.
   En caso de no estar dispoonible dejamos N/A o null?
-  ebayResponse: [buyer.buyerRegistrationAddress.primaryPhone.phoneNumber]
-- **Decision:** asi como en la nota indica  ✅
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.primaryPhone.phoneNumber] ✅✅
 
 ### `contactaddress1`
 - **Descripción:** Dirección de cliente para el campo Address 1 del bloque Customer Information.
-- **Notas:** addressLine1 de ebay ✅
-  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.addressLine1]
-- **Decision:** Si  ✅
+- **Notas:** addressLine1 de ebay
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine1]  ✅✅
 
 ### `contactaddress2`
 - **Descripción:** Dirección de cliente para el campo Address 2 del bloque Customer Information.
 - **Notas:** Si viene el addressLine2 de ebay se lo ponemos, si no va vacío.
-  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.addressLine2]
-- **Decision:** Si  ✅
+  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine2]
+- **Decision:** Si  ✅✅
 
 ### `contactcity`
 - **Descripción:** Ciudad de cliente para el campo City del bloque Customer Information.
-- **Notas:** city de ebay ✅
-  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.city]
-- **Decision:** Si  ✅
+- **Notas:** city de ebay 
+- **Decision:**  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.city] ✅✅
 
 ### `contactcompany`
 - **Descripción:** Company Name del cliente para el campo Company Name del bloque Customer Information.
-- **Notas:** "EBAY" por defecto?
-- **Decision:** "EBAY" ✅
+- **Notas:** "EBAY" por defecto
+- **Decision:** Campo contactcompany se le asigna "EBAY" por defecto ✅✅
 
 ### `contactcountry`
 - **Descripción:** Country del cliente para el campo Country del bloque Customer Information.
-- **Notas:** countryCode de ebay ✅
-  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.countryCode]
-- **Decision:** Si
+- **Notas:** countryCode de ebay 
+- **Decision:**   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode] ✅✅
 
 ### `contactpostalcode`
 - **Descripción:** Postal Code del cliente para el campo Postal Code del bloque Customer Information.
-- **Notas:** postalCode de ebay ✅
-  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.postalCode]
-- **Decision:** Si
+- **Notas:** postalCode de ebay
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.postalCode] ✅✅
 
 ### `contactstate`
 - **Descripción:** Estado del cliente para el campo State del bloque Customer Information. Poner abreviación en mayúsculas, ejemplo: `TX`.
-- **Notas:** stateOrProvince de ebay ✅
-  ebayResponse: [buyer.buyerRegistrationAddress.contactAddress.stateOrProvince]
-- **Decision:** Si
+- **Notas:** stateOrProvince de ebay 
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince] ✅✅
 
 ### `currency`
 - **Descripción:** Currency de la SO, ejemplo: `USD`.
-- **Notas:** USD por default?
-  Lo podemos sacar de ebay
-  ebayResponse: [pricingSummary.total.currency]
-- **Decision:** Si  ✅
+- **Notas:**  Sacar de ebay  
+- **Decision:** ebayResponse: [pricingSummary.total.currency]  ✅✅
 
 ### `customer`
 - **Descripción:** Nombre del cliente.
-- **Notas:** fullName de ebay ✅
-  ebayResponse: [buyer.buyerRegistrationAddress.fullName]
-- **Decision:** Si
+- **Notas:** fullName de ebay 
+- **Decision:**   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.fullName] ✅✅
 
 ### `freight`
 - **Descripción:** Costo del envío.
 - **Notas:** Le pondemos 0 porque ebay no lo cobro o este lo insertamos de acuerdo a la implementaicon que se hara al generar la label?
-- **Decision:** 0  ✅
+- **Decision:** Campo freight se le asignara el valor "0" por defecto  ✅✅
 
 ### `saledate`
 - **Descripción:** Fecha de venta.
-- **Notas:** Fecha al momento de crear el registro o la que viene de ebay?
-  ebayResponse: [creationDate]
-- **Decision:** la fecha que da ebay  ✅
+- **Notas:** Fecha que viene de ebay
+- **Decision:** Campo saledate se le asigna el valor de [timestamp] que viene de ebay (revisar que los formatos sean correctos o convertir) ✅✅
 
 ### `master_id`
 - **Descripción:** Id de la master company, asignar el valor `1`.
-- **Notas:** 1 por default ✅
-- **Decision:** Si  ✅
+- **Notas:** 1 por default 
+- **Decision:** Campo master_id se le asignara el valor 1 por defecto ✅✅
 
 ### `shipfromlocation_id`
 - **Descripción:** Id de la location referente al shipping from. Puede ser `headq`, un id de `locations` o `NULL` para dirección one-time.
 - **Notas:** usamos el mismo de `warehouse_id`? yes
   valores probables (Id del warehouse de la SO. `3`: Houston. `243`: Site 10135.)
-- **Decision:** `warehouse_id` ✅
+- **Decision:** Campo shipfromlocation_id se le asignara el valor de `warehouse_id`, revisar "Nota 04" ✅✅
 
 ### `shipfromaddress1`
 - **Descripción:** Dirección de shipping from, campo Address del bloque Shipping From.
 - **Notas:** usamos los datos del registro de la tabla location de acuerdo al shipfromlocation_id?
-- **Decision:** Si  ✅
+- **Decision:** Campo shipfromaddress  se llena con el campo address de la tabla locations, revisar "Nota 04" ✅✅
 
 ### `shipfromaddress2`
 - **Descripción:** Dirección 2 de shipping from, campo Address 2 del bloque Shipping From.
 - **Notas:** usamos los datos del registro de la tabla location?
-- **Decision:** si, de acuerdo con shipfromlocation_id  ✅
+- **Decision:** Campo shipfromaddress2  se llena con el campo address2 de la tabla locations, revisar "Nota 04" ✅✅
 
 ### `shipfromcity`
 - **Descripción:** City de shipping from, campo City del bloque Shipping From.
 - **Notas:** "Stafford" por default?
-- **Decision:** la ciudad del registro de acuerdo al shipfromlocation_id  ✅
+- **Decision:** Campo shipfromcity se llena con el campo city de la tabla locations, revisar "Nota 04" ✅✅
 
 ### `shipfromcompany`
 - **Descripción:** Company de shipping from, campo Company del bloque Shipping From.
 - **Notas:** "GreenTek Solutions, LLC" por default?
-- **Decision:** "GreenTek Solutions, LLC"  ✅
+- **Decision:**  Campo shipfromcompany se le asigna "GreenTek Solutions, LLC" por defecto ✅✅ 
 
 ### `shipfromcontact`
 - **Descripción:** Contact de shipping from, campo Contact del bloque Shipping From.
 - **Notas:** es el nombre del shipfromcontactuser_id
-- **Decision:** shipfromcontactuser_id pero el nombre "name + surname" buscar el campos exactos en la tabla users ⚠️
+- **Decision:** Campo shipfromcontact se llena con el "name + surname" que se encontro de la tabla users. Revisar "Nota 02". ✅✅ 
 
 ### `shipfromemail`
 - **Descripción:** Email de shipping from, campo Email del bloque Shipping From.
 - **Notas:** de acuerdo a shipfromcontactuser_id
-- **Decision:** buscar el campo exacto en la tabla users ⚠️
+- **Decision:** Campo shipfromemail se llena con el "mail" que se encontro de la tabla users. Revisar "Nota 02". ✅✅ 
 
 ### `shipfromphone`
 - **Descripción:** Phone de shipping from, campo Phone del bloque Shipping From.
 - **Notas:** de acuerdo a shipfromcontactuser_id
-- **Decision:** buscar el campo exacto en la tabla users ⚠️
+- **Decision:** Campo shipfromphone se llena con el "phone" que se encontro de la tabla users. Revisar "Nota 02". ✅✅ 
 
 ### `shipfromcountry`
 - **Descripción:** Country de shipping from, campo Country del bloque Shipping From.
 - **Notas:** Es de acuerdo al warehouse_id
-- **Decision:** buscar el campo exacto en la tabla locations ⚠️
+- **Decision:** Campo shipfromcountry se llena con el campo country de la tabla locations, revisar "Nota 04" ✅✅
 
 ### `shipfrompostalcode`
 - **Descripción:** Postal Code de shipping from, campo Postal Code del bloque Shipping From.
 - **Notas:** Es de acuerdo al warehouse_id
-- **Decision:** buscar el campo exacto en la tabla locations ⚠️
+- **Decision:** Campo shipfrompostalcode se llena con el campo zip_code de la tabla locations, revisar "Nota 04" ✅✅
 
 ### `shipfromstate`
 - **Descripción:** Estado del Shipping From para el campo State del bloque Shipping From. Poner abreviación en mayúsculas, ejemplo: `TX`.
 - **Notas:** Es de acuerdo al warehouse_id
-- **Decision:** buscar el campo exacto en la tabla locations ⚠️
+- **Decision:** Campo shipfromstate se llena con el campo state de la tabla locations, revisar "Nota 04" ✅✅
 
 ### `shiptolocation_id`
 - **Descripción:** Id de la location referente al shipping to. Puede ser `headq`, un id de `locations` o `NULL` para dirección one-time.
 - **Notas:** NULL
-- **Decision:** NULL ✅
+- **Decision:** campo shiptolocation_id se le asigna NULL por default✅✅
 ### `shiptoaddress1`
 - **Descripción:** Address 1 de shipping to, campo Address del bloque Shipping To.
-- **Notas:** addressLine1 de ebay ✅
-  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine1]
-- **Decision:** Si ✅
+- **Notas:** addressLine1 de ebay 
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine1] ✅✅
 
 ### `shiptoaddress2`
 - **Descripción:** Address 2 de shipping to, campo Address 2 del bloque Shipping To.
 - **Notas:** Si viene el adress 2 de ebay se lo ponemos
-  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine2]
-- **Decision:** Si ✅
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine2] ✅✅
 
 ### `shiptocity`
 - **Descripción:** City de shipping to, campo City del bloque Shipping To.
-- **Notas:** city de ebay ✅
-  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.city]
-- **Decision:** Si ✅
+- **Notas:** city de ebay 
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.city] ✅✅
 
 ### `shiptocompany`
 - **Descripción:** Nombre de compañía del cliente a quien le hacen el envío, campo Company del bloque Shipping To.
 - **Notas:** "EBAY" por defecto? YES
-- **Decision:** "EBAY" ✅
+- **Decision:** Campo shiptocompany se le asigna "EBAY" por defecto ✅✅
 
 ### `shiptocontact`
 - **Descripción:** Nombre de compañía del cliente a quien le hacen el envío, campo Company del bloque Shipping To.
 - **Notas:** nombre del cliente
-- **Decision:** fullName de respuesta de ebay  ✅
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.fullName] ✅ ✅
 
 ### `shiptocountry`
 - **Descripción:** País del cliente a quien le hacen el envío, campo Country del bloque Shipping To.
-- **Notas:** countryCode de ebay ✅
-  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode]
-- **Decision:** si ✅
+- **Notas:** countryCode de ebay
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode] ✅ ✅
 
 ### `shiptoemail`
 - **Descripción:** Email del cliente a quien le hacen el envío, campo Email del bloque Shipping To.
-- **Notas:** email del cliente que nos de ebay (email haseado) ✅
-  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.email]
-- **Decision:** si ✅
+- **Notas:** email del cliente que nos de ebay (email haseado) 
+- **Decision:**   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.email] ✅✅
 
 ### `shiptophone`
 - **Descripción:** Teléfono del cliente a quien le hacen el envío, campo Phone del bloque Shipping To.
 - **Notas:** phoneNumber que viene de ebay.
   En caso de no estar dispoonible no lo ponemos?
-  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.primaryPhone.phoneNumber]
-- **Decision:** si ✅
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.primaryPhone.phoneNumber] ✅ ✅
 
 ### `shiptopostalcode`
 - **Descripción:** Código postal del cliente a quien le hacen el envío, campo Postal Code del bloque Shipping To.
-- **Notas:** postalCode de ebay ✅
-  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.postalCode]
-- **Decision:** si ✅
+- **Notas:** postalCode de ebay
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.postalCode] ✅ ✅
 
 ### `shiptostate`
 - **Descripción:** Estado del Shipping To para el campo State del bloque Shipping To. Poner abreviación en mayúsculas, ejemplo: `TX`.
-- **Notas:** stateOrProvince de ebay ✅
-  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince]
-- **Decision:** si ✅
+- **Notas:** stateOrProvince de ebay
+- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince] ✅ ✅
 
 ---
 
