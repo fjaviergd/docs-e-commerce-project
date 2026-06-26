@@ -4,18 +4,136 @@
 #### Notas:
 
 Nota 01: Como manejar el customer
-Para la asociacion del cliente o customer se requiere de un registro en la tabla user, este registro puede ser que exista o que se requiera crear. Describo los dos casos aqui:
-- Caso 1:  
-  Si [fulfillmentStartInstructions[0].shippingStep.shipTo.fullName] de la response de ebay coincide con name + surname de la tabla users
-  y la direccion [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine1] de la response de ebay coincide con address de la tabla users
-  Entonces usar el id del usuario encontrado, si se encuentra mas de uno usar el primero.
-- Caso 2: Si con el caso 1 no se encuentra ningun registros entonces
-	  Crear un usuario nuevo en users
-	- Asignar en el campo companies_id el id=1293 de la tabla companies
-	- Asignar en el campo role el valor "CUSTOMER" 
-	- Asignar en el campo managed_by el id del rep que creo el listing 
-	- Asignar en el campo managed_by_string el "name + surname" del rep que creo el listing
+La respuesta de eBay contiene DOS bloques de direccion distintos. Es importante entender cual usar en cada contexto:
+- `buyer.buyerRegistrationAddress` → direccion registrada del comprador en eBay (puede ser diferente a la de entrega).
+- `fulfillmentStartInstructions[0].shippingStep.shipTo` → direccion real de entrega del pedido. **Este es el bloque que se usa siempre** para buscar y crear el usuario.
 
+Para la asociacion del cliente se requiere un registro en la tabla `users`:
+
+- Caso 1: Buscar si el usuario ya existe en la tabla `users`
+  Ejecutar la siguiente consulta usando los datos del bloque `shipTo`:
+
+  ```sql
+  SELECT id FROM users
+  WHERE CONCAT(name, ' ', surname) = '[shipTo.fullName]'
+  AND address = '[shipTo.contactAddress.addressLine1]'
+  AND companies_id = 1293
+  AND activo = '1'
+  LIMIT 1;
+  ```
+
+  - `[shipTo.fullName]` → `fulfillmentStartInstructions[0].shippingStep.shipTo.fullName` (ej. `"Cody Hood"`)
+  - `[shipTo.contactAddress.addressLine1]` → `fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.addressLine1` (ej. `"2200 S Old Missouri Rd"`)
+
+  Si se encuentra un registro usar su `id`. Si hay más de uno, usar el primero.
+
+- Caso 2: Si el Caso 1 no retorna ningún registro, crear un usuario nuevo en la tabla `users`.
+
+  **Notas sobre tipos de campo y constraints (DDL):**
+  - `company`, `address2`, `zip_code` y `forgot_code` son `NOT NULL` sin valor por defecto → deben enviarse siempre aunque sea con `''`.
+  - `zip_code` es `varchar(10)` → el valor de eBay `postalCode` puede venir como `"72764-8719"` (10 chars, cabe exacto). Si el valor excediera 10 caracteres, truncar.
+  - `address2` es `NOT NULL` → si `addressLine2` no viene en eBay, usar `''`.
+  - Los campos con `DEFAULT` en DDL (como `first_login`, `activo`, `send_email`) pueden omitirse; se listan aquí con su valor explícito por claridad.
+
+  **Fuente de datos — splitear `fullName`:**
+  Tomar `fulfillmentStartInstructions[0].shippingStep.shipTo.fullName` y dividir en el primer espacio:
+  - `name` → todo antes del primer espacio (ej. `"Cody"`)
+  - `surname` → todo después del primer espacio (ej. `"Hood"`)
+
+  **Campos a insertar:**
+
+  | Campo | Valor | Fuente |
+  |-------|-------|--------|
+  | `role` | `'customer'` | fijo |
+  | `name` | primera palabra de `fullName` | `shipTo.fullName` |
+  | `surname` | resto de `fullName` (desde segundo token) | `shipTo.fullName` |
+  | `email` | email del shipTo | `shipTo.email` |
+  | `password` | `'f9dd628540cd4a5689406f258cc12fb1b9b80cb8401513b70ce0d3d731ee7474'` | hash fijo para clientes externos |
+  | `company` | `'EBAY'` ⚠️ NOT NULL | fijo |
+  | `birth_date` | `'1779-01-01'` | fijo (placeholder) |
+  | `recommended_by` | `NULL` | — |
+  | `gender` | `1` | fijo |
+  | `estado_civil` | `''` | fijo |
+  | `ocupation` | `''` | fijo |
+  | `born_city` | `''` | fijo |
+  | `nationality` | `''` | fijo |
+  | `address` | `addressLine1` | `shipTo.contactAddress.addressLine1` |
+  | `address2` | `addressLine2` o `''` si no viene ⚠️ NOT NULL | `shipTo.contactAddress.addressLine2` |
+  | `colonia` | `stateOrProvince` (ej. `"AR"`) | `shipTo.contactAddress.stateOrProvince` |
+  | `city` | `city` | `shipTo.contactAddress.city` |
+  | `zip_code` | `postalCode` truncado a 10 chars ⚠️ NOT NULL varchar(10) | `shipTo.contactAddress.postalCode` |
+  | `country` | `countryCode` (ej. `"US"`) | `shipTo.contactAddress.countryCode` |
+  | `phone` | `phoneNumber` | `shipTo.primaryPhone.phoneNumber` |
+  | `mobile_phone` | `NULL` | — |
+  | `contacto_nombre_emergencia` | `''` | fijo |
+  | `contacto_telefono_emergencia` | `''` | fijo |
+  | `motivo_consulta` | `''` | fijo |
+  | `grupo_sanguineo` | `''` | fijo |
+  | `principio_evolucion_padecimiento` | `''` | fijo |
+  | `antecedentes_psiquiatricos` | `''` | fijo |
+  | `blacklist` | `''` | fijo |
+  | `comision_ventas` | `0.00` | fijo |
+  | `created_at` | datetime actual | timestamp de inserción |
+  | `user_tag` | `NULL` | — |
+  | `first_login` | `1` | fijo (DDL default: `0`) |
+  | `activo` | `'1'` | fijo (DDL default: `'1'`) |
+  | `managed_by` | id del rep que creó el listing | ver Nota 02 |
+  | `managed_by_string` | `"name + surname"` del rep | ver Nota 02 |
+  | `email_frequency` | `''` | fijo |
+  | `send_email` | `0` | fijo (DDL default: `0`) |
+  | `companies_id` | `1293` | fijo |
+  | `forgot_code` | `''` ⚠️ NOT NULL | fijo |
+  | `forgot_code_expires_at` | `NULL` | — |
+  | `enable_as_driver` | `'0'` | fijo (DDL default: `'0'`) |
+  | `enable_as_accounting` | `NULL` | fijo (DDL: int default 0, nullable) |
+  | `enable_as_bill_to` | `NULL` | fijo (DDL: int default 0, nullable) |
+  | `last_activity` | datetime actual | timestamp de inserción |
+  | `customer_type` | `'Wholesaler'` | fijo |
+  | `customer_pricing` | `0` | fijo |
+  | `customer_response_time` | `0` | fijo |
+  | `customer_payment_on_time` | `0` | fijo |
+  | `customer_easy_to_work_with` | `0` | fijo |
+  | `customer_average` | `NULL` | — |
+  | `holiday_hours` | `0.00` | fijo |
+  | `horas_pagadas_usadas` | `NULL` | — |
+  | `horas_nopagadas_usadas` | `NULL` | — |
+  | `new_notifications` | `0` | fijo (DDL default: `0`) |
+  | `conditions_id` | `9` | fijo (USED) |
+  | `terms_id` | `19` | fijo |
+  | `warehouse_default_id` | `NULL` | — |
+  | `currencies_id` | `1` | fijo |
+  | `location_default_id` | `NULL` | — |
+  | `master_id` | `1` | fijo |
+  | `clientuser_id` | `NULL` | — |
+  | `join_to_work` | `'1779-01-01'` | fijo (placeholder) |
+  | `uneda` | `0` | fijo (DDL default: `0`) |
+  | `location_id` | `NULL` | — |
+  | `internal_location_id` | `NULL` | — |
+  | `logo_redirect` | `NULL` | — |
+  | `type_location_selected` | `NULL` | — |
+  | `depto_to_count` | `NULL` | DDL: varchar(100) DEFAULT NULL |
+  | `permissions` | `NULL` | DDL: varchar(855) DEFAULT NULL |
+  | `welcome_sent` | `NULL` | DDL: int DEFAULT 1, nullable |
+  | `iq_initials` | `NULL` | DDL: varchar(10) DEFAULT NULL |
+  | `is_phone_auth` | `NULL` | DDL: varchar(10) DEFAULT '0', nullable |
+  | `phone_auth` | `NULL` | — |
+  | `code_phone_auth` | `NULL` | — |
+  | `page_limit` | `NULL` | DDL: int DEFAULT 0, nullable |
+  | `sidebar_favorites` | `NULL` | — |
+  | `enabled_dev` | `NULL` | DDL: int DEFAULT 0, nullable |
+  | `label_barcode` | `0` | fijo (DDL default: `0`) |
+  | `barcode_type` | `NULL` | DDL: varchar(20) DEFAULT NULL |
+  | `bug_ticket_notify` | `0` | fijo (DDL default: `0`) |
+  | `enable_inventory` | `NULL` | DDL: int DEFAULT 0, nullable |
+  | `permissions_livereporting` | `NULL` | DDL: int DEFAULT 0, nullable |
+  | `enabled_visitors` | `NULL` | DDL: int DEFAULT 0, nullable |
+  | `status_column` | `NULL` | DDL: int DEFAULT 0, nullable |
+  | `purchase_order_settings` | `NULL` | — |
+  | `sales_order_settings` | `NULL` | — |
+  | `packing_list_settings` | `NULL` | — |
+  | `invoice_settings` | `NULL` | — |
+  | `commercial_invoice_settings` | `NULL` | — |
+  | `signature` | `NULL` | — |
 ---
 
 Nota 02: Como manejar el rep
@@ -64,6 +182,41 @@ A lo largo de todo el proceso en diferentes tablas se requiere saber la direccio
 ---
 En caso de que sea un listing que se publico con nuestro metodo vamos a buscar el sku y encontraremos los product inventory, vamos a revisar cuales fueron los producto inventory que entraron primero al listing y esos vamos a reservar.
 En caso de no encontrarlos es porque se enlistaron con el metodo viejo y no vamos a poder reservarlos, tendra que quedarse la so como open.
+
+---
+Nota 05: Como buscar y asignar el carrier
+El proceso para identificar y asignar el carrier se basa en leer el carrier que indica eBay en su respuesta y mapearlo a un registro de la tabla `carriers` usando variables de entorno. Esto permite agregar nuevos carriers sin modificar el código.
+
+**Paso 1 — Leer el carrier desde eBay**
+Tomar el valor de [fulfillmentStartInstructions[0].shippingStep.shippingCarrierCode] de la respuesta de eBay.
+Ejemplo: `"UPS"`, `"FEDEX"`.
+
+**Paso 2 — Resolver el carrier_id mediante variable de entorno**
+Se define una variable de entorno tipo mapa que relaciona el nombre del carrier (en el formato que usa eBay) con el id del registro en la tabla `carriers`:
+```
+CARRIER_MAP={"UPS": 53, "FEDEX": 51}
+```
+Con el valor leído de eBay se busca en este mapa para obtener el `carrier_id`.
+Si el carrier que viene de eBay no existe en el mapa, usar el carrier por defecto: `UPS` (id=53).
+
+**Paso 3 — Consultar la tabla `carriers`**
+Con el `carrier_id` resuelto, buscar el registro completo en la tabla `carriers` mediante su `id`. De ese registro se toman:
+- `name` → carrier_string
+- `external_carrier_code` → carrier_code
+- `external_account_number` → bill_account_number
+- `payment_type` → payment_type
+- `service_type` → array JSON del que se obtiene service_code y service_string
+
+**Paso 4 — Resolver el service_code**
+Tomar el valor de [fulfillmentStartInstructions[0].shippingStep.shippingServiceCode] de la respuesta de eBay.
+Ejemplo eBay: `"UPSGround"`, `"FedExGround"`.
+
+Para encontrar la coincidencia en el array `service_type` del carrier, aplicar esta normalización:
+- Convertir el valor de eBay a minúsculas sin separadores → `"upground"` → `"upsground"`
+- Para cada objeto en el array `service_type`, tomar su `service_code`, eliminar guiones bajos y comparar → `"ups_ground"` → `"upsground"`
+- El que coincida es el service a usar.
+
+Si no se encuentra coincidencia, usar `ups_ground` (UPS) o `fedex_ground` (FedEx) como fallback según el carrier.
 
 
 ---
@@ -561,38 +714,38 @@ $margin_percentage = number_format($margin_percentage, 2, '.', '');
 
 ### `carrier_id` ✅
 - **Descripción:** Id del carrier referente a la tabla `carriers`.
-- **Notas:** 53 - UPS External por default
-- **Decision:** ids =51 y 53
+- **Notas:** Carriers activos: UPS (id=53), FedEx (id=51). Los ids se configuran via variable de entorno `CARRIER_MAP`.
+- **Decision:** Campo carrier_id se resuelve de acuerdo a la "Nota 05". ✅✅
 - **Columna referencia:** id
 
-### `carrier_string `✅
-- **Descripción:** Se obtiene de su registro de `carriers`.
-- **Notas:** UPS por defecto
-- **Decision:** FedEx, UPS
+### `carrier_string` ✅
+- **Descripción:** Nombre del carrier obtenido de su registro en la tabla `carriers`.
+- **Notas:** Campo `name` del registro del carrier. Ejemplo: `"UPS"`, `"FedEx"`.
+- **Decision:** Campo carrier_string se llena de acuerdo a la "Nota 05", campo `name` de la tabla `carriers`. ✅✅
 - **Columna referencia:** name
 
 ### `carrier_code` ✅
-- **Descripción:** Se obtiene de su registro de `carriers`.
-- **Notas:** ups default
-- **Decision:** fedex, ups
+- **Descripción:** Código externo del carrier obtenido de su registro en la tabla `carriers`.
+- **Notas:** Campo `external_carrier_code` del registro del carrier. Ejemplo: `"ups"`, `"fedex"`.
+- **Decision:** Campo carrier_code se llena de acuerdo a la "Nota 05", campo `external_carrier_code` de la tabla `carriers`. ✅✅
 - **Columna referencia:** external_carrier_code
 
 ### `service_code` ✅
-- **Descripción:** Se obtiene de su registro de `carriers`.
-- **Notas:** ups_ground por defecto
-- **Decision:** [{"service_code":"ups_next_day_air_early_am","name":"UPS Next Day Air\u00ae Early","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_ground_international","name":"UPS Ground\u00ae (International)","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_worldwide_express","name":"UPS Worldwide Express\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_next_day_air","name":"UPS Next Day Air\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_worldwide_express_plus","name":"UPS Worldwide Express Plus\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_next_day_air_saver","name":"UPS Next Day Air Saver\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_2nd_day_air_am","name":"UPS 2nd Day Air AM\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_2nd_day_air_international","name":"UPS 2nd Day Air\u00ae (International)","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_2nd_day_air","name":"UPS 2nd Day Air\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_ground","name":"UPS\u00ae Ground","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_express_early_am","name":"UPS Express Early A.M. to the U.S.","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_next_day_air_international","name":"UPS Next Day Air\u00ae (International)","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_worldwide_saver","name":"UPS Worldwide Saver\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"ups_3_day_select","name":"UPS 3 Day Select\u00ae","domestic":true,"international":true,"is_multi_package_supported":true,"is_return_supported":true}], [{"service_code":"fedex_international_priority_express","name":"FedEx International Priority\u00ae Express","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_ground","name":"FedEx Ground\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_home_delivery","name":"FedEx Home Delivery\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_2day","name":"FedEx 2Day\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_2day_am","name":"FedEx 2Day\u00ae A.M.","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_express_saver","name":"FedEx Express Saver\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_standard_overnight","name":"FedEx Standard Overnight\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_priority_overnight","name":"FedEx Priority Overnight\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_first_overnight","name":"FedEx First Overnight\u00ae","domestic":true,"international":false,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_economy_international","name":"FedEx International Economy\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_ground_international","name":"FedEx International Ground\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_international_economy","name":"FedEx International Economy\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_international_priority","name":"FedEx International Priority\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true},{"service_code":"fedex_international_first","name":"FedEx International First\u00ae","domestic":false,"international":true,"is_multi_package_supported":true,"is_return_supported":true}]
-- **Columna referencia:** service_type objeto service_code
+- **Descripción:** Código del servicio de envío. Se obtiene parseando el array `service_type` del registro de `carriers`.
+- **Notas:** eBay envía el servicio en [shippingStep.shippingServiceCode] en formato PascalCase sin separadores (ej. `"UPSGround"`). El array `service_type` en `carriers` usa snake_case (ej. `"ups_ground"`). Para hacer el match: normalizar ambos valores a minúsculas sin separadores y comparar. Fallback: `ups_ground` para UPS, `fedex_ground` para FedEx. Revisar "Nota 05".
+- **Decision:** Campo service_code se llena de acuerdo a la "Nota 05". ✅✅
+- **Columna referencia:** service_type → objeto → service_code
 
 ### `service_string` ✅
-- **Descripción:** Se obtiene de su registro de `carriers`.
-- **Notas:** UPS® Ground por defecto?
-- **Decision:** preguntar a anuar, FedEx Ground®
-- **Columna referencia:** service_type objeto name
+- **Descripción:** Nombre legible del servicio de envío. Se obtiene del mismo objeto del array `service_type` que se identificó en `service_code`.
+- **Notas:** Una vez encontrado el objeto del servicio en `service_type`, tomar su campo `name`. Ejemplo: `"UPS® Ground"`, `"FedEx Ground®"`. Revisar "Nota 05".
+- **Decision:** Campo service_string se llena de acuerdo a la "Nota 05". ✅✅
+- **Columna referencia:** service_type → objeto → name
 
-### `bill_account_number `✅
-- **Descripción:** Bill account de envío.
-- **Notas:** valor de external_account_number en tabla carriers
-- **Decision:** preguntar a anuar, ups=XJ2887, fedex=341701198
+### `bill_account_number` ✅
+- **Descripción:** Número de cuenta externa de facturación del carrier. Se obtiene del registro de `carriers`.
+- **Notas:** Campo `external_account_number` de la tabla `carriers`. UPS: `XJ2887`, FedEx: `341701198`. Revisar "Nota 05".
+- **Decision:** Campo bill_account_number se llena de acuerdo a la "Nota 05", campo `external_account_number` de la tabla `carriers`. ✅✅
 - **Columna referencia:** external_account_number
 
 ### `payment_type`
