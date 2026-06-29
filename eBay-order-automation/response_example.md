@@ -4,14 +4,18 @@
 
 ## 1. Notification webhook (ORDER_CONFIRMATION)
 
-Payload que llega al endpoint cuando se realiza una venta. Contiene el `orderId` que se usa para consultar el detalle completo en Fulfillment API.
+Payload que llega al endpoint cuando se realiza una venta. Incluye:
+- `data.user` (`userId`, `username`) → identifica la cuenta vendedora que emitió la venta (ver `proceso.md` — Fase 1).
+- `data.order.orderId` → se usa para consultar el detalle completo en la Fulfillment API.
+
+Este ejemplo corresponde a la misma orden `13-14786-65872` del ejemplo de Fulfillment (Sección 2).
 
 ```json
 {
   "type": "notification_received",
-  "timestamp": "2026-06-18T22:07:02.370Z",
+  "timestamp": "2026-06-19T14:15:24.269Z",
   "topic": "ORDER_CONFIRMATION",
-  "notificationId": "2164dd73-bb14-443a-b0a1-a048384ef13c_e1a34a5e-fe2e-4568-896a-e701a75b9fba",
+  "notificationId": "e9569bb0-3dbd-40ee-8a26-d6a60f355096_64aa8d87-0afe-4666-98ea-175015f09678",
   "payload": {
     "metadata": {
       "topic": "ORDER_CONFIRMATION",
@@ -19,18 +23,22 @@ Payload que llega al endpoint cuando se realiza una venta. Contiene el `orderId`
       "deprecated": false
     },
     "notification": {
-      "notificationId": "2164dd73-bb14-443a-b0a1-a048384ef13c_e1a34a5e-fe2e-4568-896a-e701a75b9fba",
-      "eventDate": "2026-06-18T22:07:01.137Z",
-      "publishDate": "2026-06-18T22:07:01.411Z",
+      "notificationId": "e9569bb0-3dbd-40ee-8a26-d6a60f355096_64aa8d87-0afe-4666-98ea-175015f09678",
+      "eventDate": "2026-06-19T14:15:23.110Z",
+      "publishDate": "2026-06-19T14:15:23.407Z",
       "publishAttemptCount": 1,
       "data": {
+        "user": {
+          "userId": "TFHVhLbkQtu",
+          "username": "greenteksolutions"
+        },
         "order": {
-          "orderId": "123-123-4435",
+          "orderId": "13-14786-65872",
           "orderLineItems": [
             {
-              "orderLineItemId": "123455",
-              "listingId": "123566",
-              "quantity": 1
+              "orderLineItemId": "10084048110913",
+              "listingId": "287403994390",
+              "quantity": 19
             }
           ]
         }
