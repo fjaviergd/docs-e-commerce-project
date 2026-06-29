@@ -175,8 +175,16 @@ Caso 1: Al buscar el [data.lineItems[0].sku] en ecommerce_listings SI se encontr
 - Otro campo que se tiene que definir con el primer producto que se reserve es el valor del warehouse_id de la so_info, a este campo se le pone el valor que el primer producto tenga en su campo warehouse_id.
 Caso 2: Al buscar el [data.lineItems[0].sku] en ecommerce_listings NO se encontro entonces no haremos la reserva y el status quedara solo como "Open". Aqui como no hay productos se tiene que asignar la warehouse_id de la so_info con el valor 3 por defecto.  
 
+**SO en status "Reserved" o "Partially Reserved" — valores financieros se calculan con los items reservados:**
+Cuando se reserva al menos un item, los campos financieros se calculan usando los registros de `inventory` que fueron efectivamente reservados:
+- `extendedcost` → suma de `unitprice` de los items reservados
+- `estimated_cost` → suma de `purchasecost` de los items reservados
+- `gross_margin`, `margin_percentage` y `profit` → calculados con la fórmula de margen sobre los items reservados (ver descripción de esos campos en `so_info`)
+- `subtotal` → `extendedcost + extracost + freight + serviches_charge + misc_charge` (sin tax)
+- `total` → `extendedcost + extracost + freight + serviches_charge + misc_charge + tax`
+
 **SO en status "Open" (sin reserva) — valores financieros en 0:**
-Cuando no se reserva ningún item, los campos financieros que dependen del inventory reservado (`subtotal`, `total`, `extendedcost`, `estimated_cost`, `gross_margin`, `margin_percentage`, `profit`) quedan en `0`. Esto es **esperado y aceptado**: la reserva se hará de forma **manual** más adelante, y es en ese momento cuando se recalculan `subtotal` y `total` (y los demás valores) con los inventories reservados.
+Cuando no se reserva ningún item, todos los campos financieros que dependen del inventory reservado quedan en `0`: `extendedcost`, `estimated_cost`, `gross_margin`, `margin_percentage`, `profit`, `subtotal` y `total`. La reserva se hará de forma **manual** más adelante.
 
 ---
 Nota 04: Como saber la ubicación de origen
