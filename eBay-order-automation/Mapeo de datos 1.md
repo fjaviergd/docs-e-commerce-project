@@ -248,7 +248,7 @@ Las 4 cuentas de vendedor de eBay corresponden a **la misma entidad en el CRM**.
 - `companies_id = 1293` (para el customer en `users`)
 - `shipfromcompany` / `from_company` / `to_company` → ver decisiones de cada campo (dinámico vía `companies.name`, ver Nota 04).
 
-La identificación de la cuenta (ver `proceso.md` — Fase 1) se usa para autenticar la llamada a Fulfillment, **no** para cambiar la entidad ni la company de la SO.
+La identificación de la cuenta (vía `data.user.userId` de la notificación, endpoint único — ver `proceso.md` — Fase 1) se usa para autenticar la llamada a Fulfillment, **no** para cambiar la entidad ni la company de la SO.
 
 ---
 ---
