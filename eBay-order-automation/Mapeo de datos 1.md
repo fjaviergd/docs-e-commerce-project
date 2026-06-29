@@ -175,9 +175,14 @@ Caso 1: Al buscar el [data.lineItems[0].sku] en ecommerce_listings SI se encontr
 - Otro campo que se tiene que definir con el primer producto que se reserve es el valor del warehouse_id de la so_info, a este campo se le pone el valor que el primer producto tenga en su campo warehouse_id.
 Caso 2: Al buscar el [data.lineItems[0].sku] en ecommerce_listings NO se encontro entonces no haremos la reserva y el status quedara solo como "Open". Aqui como no hay productos se tiene que asignar la warehouse_id de la so_info con el valor 3 por defecto.  
 
+**SO en status "Open" (sin reserva) — valores financieros en 0:**
+Cuando no se reserva ningún item, los campos financieros que dependen del inventory reservado (`subtotal`, `total`, `extendedcost`, `estimated_cost`, `gross_margin`, `margin_percentage`, `profit`) quedan en `0`. Esto es **esperado y aceptado**: la reserva se hará de forma **manual** más adelante, y es en ese momento cuando se recalculan `subtotal` y `total` (y los demás valores) con los inventories reservados.
+
 ---
 Nota 04: Como saber la ubicación de origen
 A lo largo de todo el proceso en diferentes tablas se requiere saber la direccion de donde salen las cosas, o de donde esta la compañia que envia el paquete o para saber su contacto. En esos casos se va a tomar el warehouse_id y se buscara mediante el id el registro en la tabla locations, el registro que se encuentre tiene datos como: name, address, address2, country, state, city, phone, sip_code, etc, todos esos campos se van a mapear a algunos campos especificos que ya te documentare. Tambien se puede revisar la descripcion de la tabla locations para saber todos los campos que tiene.
+
+**Nombre de la company (shipping from):** el nombre que va en `shipfromcompany` / `from_company` NO es `locations.name`. Se obtiene de la company asociada al location: el registro de `locations` tiene un campo `companies_id` que apunta a la tabla `companies`; se toma el campo `name` de ese registro de `companies`. Ruta: `locations.companies_id` → `companies.id` → `companies.name`.
 
 ---
 En caso de que sea un listing que se publico con nuestro metodo vamos a buscar el sku y encontraremos los product inventory, vamos a revisar cuales fueron los producto inventory que entraron primero al listing y esos vamos a reservar.
@@ -218,6 +223,24 @@ Para encontrar la coincidencia en el array `service_type` del carrier, aplicar e
 
 Si no se encuentra coincidencia, usar `ups_ground` (UPS) o `fedex_ground` (FedEx) como fallback según el carrier.
 
+
+---
+Nota 06: Un solo producto por orden
+Cada orden que eBay notifica corresponde a **un solo tipo de producto** (un line item). Si un comprador adquiere productos distintos en una misma compra (ej. 3 SSD + 2 laptops), eBay genera **una orden separada por cada producto diferente**. Esto se confirmó en pruebas.
+
+Por eso a lo largo del documento se referencia siempre `data.lineItems[0]`: solo existe un line item por orden. La `quantity` de ese line item sí puede ser mayor a 1 (ej. 3 unidades del mismo SSD), y eso se maneja en la reserva (Nota 03) desglosando una `soline` por unidad.
+
+⏳ **Pendiente por confirmar:** cómo llega la notificación cuando en una misma compra hay varios productos distintos — si eBay envía **una notificación por cada orden** o **una sola notificación con varias órdenes**. Se definirá tras las pruebas del webhook.
+
+---
+Nota 07: Cuentas de eBay y entidad en el CRM
+Las 4 cuentas de vendedor de eBay corresponden a **la misma entidad en el CRM**. Por lo tanto, los valores de entidad son fijos e iguales para cualquier cuenta que origine la venta:
+
+- `master_id = 1`
+- `companies_id = 1293` (para el customer en `users`)
+- `shipfromcompany` / `from_company` / `to_company` → ver decisiones de cada campo (dinámico vía `companies.name`, ver Nota 04).
+
+La identificación de la cuenta (ver `proceso.md` — Fase 1) se usa para autenticar la llamada a Fulfillment, **no** para cambiar la entidad ni la company de la SO.
 
 ---
 ---
@@ -298,7 +321,8 @@ Si no se encuentra coincidencia, usar `ups_ground` (UPS) o `fedex_ground` (FedEx
 - **Descripción:** Estado para la aplicación de taxes. Va el id del state relacionado con el `state` del `shipment to`.
 - **Notas:** Hacer match entre el state que de ebay con el de esta tabla para establecer el id
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince] ✅ ✅
-- **Decision:**  Campo campo states_id se llena de la siguiente forma, el valor que venga en [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince] se va a tomar y se buscara en la tabla state de crm por el campo abbr. ✅ ✅ 
+- **Decision:**  Campo states_id se llena de la siguiente forma: el valor que venga en [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince] se toma y se busca en la tabla `states` del CRM por el campo `abbr` y `master_id = 1`. ✅ ✅
+  ⏳ **Pendiente:** definir el fallback cuando el state no exista en la tabla. eBay vende solo a USA y México, y todos los estados de ambos países ya están registrados, pero falta decidir qué hacer si llega un estado fuera de esos catálogos.
 
 ### `tax`
 - **Descripción:** Valor del tax.
@@ -307,10 +331,19 @@ Si no se encuentra coincidencia, usar `ups_ground` (UPS) o `fedex_ground` (FedEx
 
 ### `subtotal`
 - **Descripción:** Valor de total antes de taxes.
-- **Notas:** Pondemos el valor total que nos da ebay?
-  o desglosamos tomando el valor total de ebay y si tiene un state con tax le quitamos ese monto de tax y ponemos el valor calculado de esa operacion?
-  ebayResponse: {pricingSummary.priceSubtotal.value}
-- **Decision:** Campo subtotal se llena con el valor de pricingSummary.priceSubtotal.value que viene de ebay ✅ ✅
+- **Notas:** Ya **no** se usa el valor de eBay. Se calcula con valores internos del CRM: la misma fórmula que `total` pero sin el `tax`.
+- **Decision:** Campo subtotal se calcula así:
+
+```php
+$subtotal = floatval($extendCost)   // suma de unitprice de los inventories reservados (extendedcost)
++ floatval($extracost)
++ floatval($freight)
++ floatval($servichesCharge)
++ floatval($misCcharge);
+// (sin tax)
+```
+
+No se puede si no hay items de inventory reservados; hacerlo solo con los items reservados que se encuentren. Si no hay ningún item reservado, poner 0. ✅ ✅
 
 ### `serviches_charge`
 - **Descripción:** Valor de services a aumentar a la orden, campo Services.
@@ -329,17 +362,17 @@ Si no se encuentra coincidencia, usar `ups_ground` (UPS) o `fedex_ground` (FedEx
 
 ### `extendedcost`
 - **Descripción:** Suma del valor `unitprice` de todos los solines (inventarios).
-- **Notas:** de la forma que dices? si
+- **Notas:** No se puede si no hay items de inventory reservados, hacerlo solo con los items reservados que se encuentren, en caso de no haber ningun item reservado poner 0.
 - **Decision:** Campo extendedcost se le asigna la suma del campo unitprice de cada uno de los items reservados de la tabla inventory ✅ ✅
 
 ### `estimated_cost`
 - **Descripción:** Sumar el campo `purchasecost` de todos los solines (inventories) y asignar el valor final a `estimated_cost`.
-- **Notas:** Este paso se hace con la formula? yes
+- **Notas:** No se puede si no hay items de inventory reservados, hacerlo solo con los items reservados que se encuentren, en caso de no haber ningun item reservado poner 0.
 - **Decision:** Campo estimated_cost se le asigna la suma del campo `purchasecost` de cada uno de los items reservados de la tabla inventory ✅ ✅
 
 ### `cleartax`
-- **Descripción:** Ajustar el valor a `0` (indicamos al sistema que los taxes están activos).
-- **Notas:** 0 si los taxes estan aplicados, 1 si hay alguna excepcion y no se tienen que aplicar taxes
+- **Descripción:** Ajustar el valor a `1` (indicamos al sistema que NO se aplican taxes en esta orden).
+- **Notas:** 0 si los taxes estan aplicados, 1 si hay alguna excepcion y no se tienen que aplicar taxes. En este flujo siempre va 1 (tax = 0).
 - **Decision:**  Campo cleartax se llena con "1" ✅ ✅  
 
 ### `warehouse_id`
@@ -355,7 +388,7 @@ Si no se encuentra coincidencia, usar `ups_ground` (UPS) o `fedex_ground` (FedEx
 
 ### `gross_margin`
 - **Descripción:** Margen calculado usando el `suppliermargin` del PO para cada soline (inventory). Se usa formula para sacar el gross margin.
-- **Notas:** Obtenemos el `suppliermargin` del PO para cada soline (inventory).
+- **Notas:** Obtenemos el `suppliermargin` del PO para cada soline (inventory). 
 
 ```php
 $po_id = po_id del registro inventory;
@@ -382,7 +415,8 @@ if ($suppliermargin_percentage > 0) {
 }
 ```
  
-- **Decision:** Al campo `gross_margin`le asignamos el valor de `$estimated_margin`. ✅✅
+- **Decision:** Al campo `gross_margin`le asignamos el valor de `$estimated_margin. No se puede si no hay items de inventory reservados, hacerlo solo con los items reservados que se encuentren, en caso de no haber ningun item reservado poner 0. ✅✅
+  📌 **Nota para backend:** en la rama `else` del pseudocódigo (`$estimated_margin = $estimated_margin + $diff`) se usa `$estimated_margin` antes de inicializarla. Revisar/validar esta lógica al portar el código (aplica también a la fórmula de `margin_percentage`).
 
 ### `margin_percentage`
 - **Descripción:** Porcentaje de margen calculado acumulando el profit de todos los inventories.
@@ -441,17 +475,30 @@ if ($profit_total > 0) {
 $margin_percentage = number_format($margin_percentage, 2, '.', '');
 ```
 
-- **Decision:** Asignamos al campo `margin_percentage` el valor de `$margin_percentage`. ✅✅
+- **Decision:** Asignamos al campo `margin_percentage` el valor de `$margin_percentage`. No se puede si no hay items de inventory reservados, hacerlo solo con los items reservados que se encuentren, en caso de no haber ningun item reservado poner 0. ✅✅
 
 ### `profit`
 - **Descripción:** Variable `$profit_total` de la fórmula de margen.
 - **Notas:** Seguir formula de arriba 
-- **Decision:** Al campo profit se le asigna el valor de la variable $profit_total de la formula de arriba ✅✅
+- **Decision:** Al campo profit se le asigna el valor de la variable $profit_total de la formula de arriba. No se puede si no hay items de inventory reservados, hacerlo solo con los items reservados que se encuentren, en caso de no haber ningun item reservado poner 0. ✅✅
 
 ### `total`
 - **Descripción:** Valor total de la orden.
 - **Notas:** Seguir formula 
-- **Decision:** TODO: revisar con la response ⚠️ ⚠️ ⚠️
+```php
+$total = floatval($extendCost)
+
++ floatval($extracost)
+
++ floatval($freight)
+
++ floatval($servichesCharge)
+
++ floatval($misCcharge)
+
++ floatval($tax);
+```
+- **Decision:** Seguir formula. No se puede si no hay items de inventory reservados, hacerlo solo con los items reservados que se encuentren, en caso de no haber ningun item reservado poner 0.
 
 ### `created_at`
 - **Descripción:** Fecha de creación de la SO, tipo de dato `datetime`.
@@ -496,7 +543,7 @@ $margin_percentage = number_format($margin_percentage, 2, '.', '');
 ### `contactphone`
 - **Descripción:** Teléfono de cliente para el campo Phone del bloque Customer Information.
 - **Notas:** phoneNumber que viene de ebay.
-  En caso de no estar dispoonible dejamos N/A o null?
+  En caso de no estar dispoonible dejamos N/A o null? NULL
 - **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.primaryPhone.phoneNumber] ✅✅
 
 ### `contactaddress1`
@@ -583,8 +630,8 @@ $margin_percentage = number_format($margin_percentage, 2, '.', '');
 
 ### `shipfromcompany`
 - **Descripción:** Company de shipping from, campo Company del bloque Shipping From.
-- **Notas:** "GreenTek Solutions, LLC" por default?
-- **Decision:**  Campo shipfromcompany se le asigna "GreenTek Solutions, LLC" por defecto ✅✅ 
+- **Notas:** Dinámico según el location de origen, no hardcodeado.
+- **Decision:** Campo shipfromcompany se llena con el `name` de la company asociada al location: `locations.companies_id` → `companies.name`. Revisar "Nota 04". ✅✅ 
 
 ### `shipfromcontact`
 - **Descripción:** Contact de shipping from, campo Contact del bloque Shipping From.
@@ -658,7 +705,7 @@ $margin_percentage = number_format($margin_percentage, 2, '.', '');
 ### `shiptophone`
 - **Descripción:** Teléfono del cliente a quien le hacen el envío, campo Phone del bloque Shipping To.
 - **Notas:** phoneNumber que viene de ebay.
-  En caso de no estar dispoonible no lo ponemos?
+  En caso de no estar dispoonible no lo ponemos? NULL
 - **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.primaryPhone.phoneNumber] ✅ ✅
 
 ### `shiptopostalcode`
@@ -675,6 +722,8 @@ $margin_percentage = number_format($margin_percentage, 2, '.', '');
 
 
 ## Campos en `shipment`
+
+> **Alcance:** este flujo crea el registro de `shipment` con los datos de origen/destino y carrier, pero **no** genera la etiqueta de envío (label). Por eso los campos relacionados con la generación de label y paquete (weight, dimensiones, `package_quantity`, `num_packages`, `items`, tracking, costos, etc.) no se mapean: corresponden a un proceso posterior que no está en el alcance actual.
 
 ### `id`
 - **Descripción:** Automático, auto incrementable.
@@ -756,8 +805,8 @@ $margin_percentage = number_format($margin_percentage, 2, '.', '');
 
 ### `declared_value`
 - **Descripción:** Opcional si se quiere establecer un valor de mercancía. Por default `0.00`.
-- **Notas:** `0.00` por default
-- **Decision:** Cuando sea mayor de 999 se declara el valor del total de la orden de venta, y si es menor entonces `0.00` ✅✅
+- **Notas:** `0.00` por default. El "total de la orden" es el `total` de la SO (calculado con valores del CRM), **no** el monto de eBay.
+- **Decision:** Si el `total` de la SO es mayor a 999, se declara ese valor de `total`; si es menor o igual, `0.00`. ✅✅
 - **Columna referencia:**
 
 ### `unit_measurement`
@@ -829,7 +878,7 @@ $margin_percentage = number_format($margin_percentage, 2, '.', '');
 ### `to_phone`
 - **Descripción:** Teléfono de destino.
 - **Notas:** phoneNumber que viene de ebay.
-  En caso de no estar dispoonible no lo ponemos?
+  En caso de no estar dispoonible no lo ponemos? NULL
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.primaryPhone.phoneNumber]
 - **Decision:** Si ✅✅
 - **Columna referencia:**
@@ -868,9 +917,9 @@ $margin_percentage = number_format($margin_percentage, 2, '.', '');
 
 ### `from_company`
 - **Descripción:** Compañía remitente.
-- **Notas:** "GreenTek Solutions, LLC" por default
-- **Decision:** Campo from_company se le asigna "GreenTek Solutions, LLC" por defecto ✅✅ 
-- **Columna:**
+- **Notas:** Dinámico, igual que `shipfromcompany` de la so_info.
+- **Decision:** Campo from_company se llena con el campo `shipfromcompany` del registro creado en la so_info (que a su vez sale de `locations.companies_id` → `companies.name`). Revisar "Nota 04". ✅✅ 
+- **Columna:** shipfromcompany
 
 ### `from_country`
 - **Descripción:** País remitente.
