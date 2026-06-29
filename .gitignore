@@ -1,1 +1,4 @@
 .DS_Store
+
+# Obsidian: estado de UI local, se regenera automáticamente
+.obsidian/workspace.json
