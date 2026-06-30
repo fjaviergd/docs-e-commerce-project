@@ -48,15 +48,27 @@ Esto se confirmó contra los logs reales del backend ([`ebay-orders.jsonl`](ebay
 
 > **Mapear por `userId`, no por `username`.** El `userId` es inmutable; el `username` puede cambiar si el vendedor renombra la tienda. Se guardan ambos, pero `userId` es la llave de la config cuenta→token.
 
-Configuración a mantener por cada una de las 4 cuentas:
+**Resolución cuenta → token (tablas):**
 
-| Campo | Uso |
-|---|---|
-| `userId` | **Llave** de identificación (inmutable) |
-| `username` / `sellerId` | Referencia y validación contra Fulfillment |
-| OAuth refresh/access token | Autenticar la llamada a Fulfillment API |
+1. **Identificar la cuenta** — buscar el `userId` de la notificación en la tabla `gobig_ebay_linked_accounts`, columna **`ebay_user_id`** (columna nueva que se agrega para almacenar el `userId` de eBay). El registro encontrado da el `id` de la cuenta vinculada.
+2. **Obtener el token** — con ese `id` buscar en la tabla `gobig_ebay_tokens` por `ebay_account_id` (FK → `gobig_ebay_linked_accounts.id`) y tomar el `refresh_token` / `token` (access token) para autenticar la llamada a Fulfillment. Revisar `expired` / `access_token_expires` y refrescar el access token si está vencido.
+3. **Confirmación secundaria** — validar que el `sellerId` de la respuesta de Fulfillment corresponde a la cuenta identificada.
+
+Mapeo de las 4 cuentas (`ebay_user_id` es la llave inmutable):
+
+| Cuenta | `username` | `ebay_user_id` (llave) |
+|---|---|---|
+| A | greenteksolutions | TFHVhLbkQtu |
+| B | greenteksolutions-b | DU5zAC4LSIy |
+| C | greenteksolutions-c | tF7soxK5TPG |
+| D | greenteksolutions-d | LECXHKWWRzO |
+
+`gobig_ebay_linked_accounts` — campos relevantes: `id` (PK), `name`, `companies_id`, `master_id`, **`ebay_user_id` (nuevo)**.
+
+`gobig_ebay_tokens` — campos relevantes: `ebay_account_id` (FK → `gobig_ebay_linked_accounts.id`), `token`, `refresh_token`, `access_token_expires`, `expired`.
 
 **Casos defensivos:**
+- Si el `userId` no existe en `gobig_ebay_linked_accounts.ebay_user_id`, descartar el evento (cuenta no vinculada) y registrar la incidencia.
 - Si `data.user` no viene en la notificación (ocurrió en el payload de prueba inicial), hacer fallback: consultar Fulfillment e identificar por `sellerId`, o descartar el evento.
 
 ---
@@ -72,7 +84,9 @@ Se creará **un endpoint único** (webhook) que reciba los eventos HTTP POST que
 - Con el `orderId` se consulta la Fulfillment API para obtener el detalle completo de la orden.
 - Referencia del payload completo de fulfillment: [`response_example.md`](response_example.md) — Sección 2.
 
-**Idempotencia (requisito):** eBay reenvía notificaciones (reintentos con `publishAttemptCount` > 1, y se observaron duplicados con el mismo `notificationId` en los logs). El endpoint/procesamiento **debe ser idempotente**: deduplicar por `orderId` (y/o `notificationId`) para no crear SOs duplicadas ante notificaciones repetidas de la misma orden.
+**Idempotencia (requisito):** eBay reenvía notificaciones (reintentos con `publishAttemptCount` > 1, y se observaron duplicados con el mismo `notificationId` en los logs). El endpoint/procesamiento **debe ser idempotente**.
+
+Como se genera **una SO por line item** (ver Fase 3 y [`Manejo de multi-line-items.md`](Manejo%20de%20multi-line-items.md)), la llave de deduplicación es **`orderId + orderLineItemId`** (no basta `orderId`, porque un mismo `orderId` produce varias SOs). Cada SO guarda su `orderLineItemId` en el campo `reference`, lo que permite verificar si una línea ya fue procesada antes de crear su SO.
 
 ---
 
@@ -108,9 +122,14 @@ Una vez confirmado el mapeo, diseñar el flujo de operaciones:
 
 Desarrollo del servicio que, al recibir el `orderId`:
 
-1. Consulta la Fulfillment API de eBay para obtener el detalle de la orden.
-2. Crea el registro en `so_info`.
-3. Busca y reserva los `inventory` correspondientes al SKU del listing.
-4. Crea el registro en `shipment`.
+1. Consulta la Fulfillment API de eBay para obtener el detalle de la orden (con sus `lineItems[]`).
+2. Resuelve/crea el customer desde `shipTo` **una sola vez** por orden (se reutiliza su `id` en todas las SOs de la orden).
+3. **Por cada `lineItem` de la orden** (estrategia Opción B — una SO por producto, ver [`Manejo de multi-line-items.md`](Manejo%20de%20multi-line-items.md)):
+   1. Verifica idempotencia por `orderId + orderLineItemId`; si esa línea ya tiene SO, la omite.
+   2. Crea el registro en `so_info` (con `client_PO_Number = orderId` y `reference = orderLineItemId`).
+   3. Busca y reserva los `inventory` correspondientes al SKU de ese listing.
+   4. Crea el registro en `shipment`.
+
+Nota: como eBay a veces separa la compra en varias órdenes y a veces la combina en una con varios line items, dividir siempre en una SO por line item normaliza el resultado en el CRM en ambos casos.
 
 > **Alcance:** el proceso termina al dejar creados/actualizados los registros en `so_info`, `shipment` e `inventory` (estos últimos solo en los pocos campos que se modifican al reservar). **No** incluye generación de etiquetas de envío, cotización de carriers ni integración con ShipEngine; eso queda fuera del alcance.

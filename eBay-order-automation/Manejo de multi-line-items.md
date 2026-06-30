@@ -1,8 +1,18 @@
 # Manejo de órdenes multi-line-item — opciones a decidir
 
-Documento para decidir, junto con el equipo de backend, cómo registrar en el CRM una orden de eBay que contiene **más de un producto distinto** (varios line items).
+Documento sobre cómo registrar en el CRM una orden de eBay que contiene **más de un producto distinto** (varios line items).
 
-**Estado: decisión pendiente.**
+**Estado: ✅ Decidido.**
+
+## Decisión tomada
+
+El equipo eligió la **Opción B — Dividir: 1 SO por producto**, con la identidad de line item por **Opción A**:
+- `client_PO_Number = orderId` (se repite entre las SOs de una misma compra).
+- `orderLineItemId` guardado en el campo `reference`.
+- **Idempotencia** con llave **`orderId + orderLineItemId`**.
+- El **customer** se crea una sola vez por orden y se referencia en las N SOs.
+
+El resto del documento se conserva como registro del análisis comparativo que llevó a la decisión.
 
 ---
 

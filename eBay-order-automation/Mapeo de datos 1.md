@@ -233,12 +233,16 @@ Si no se encuentra coincidencia, usar `ups_ground` (UPS) o `fedex_ground` (FedEx
 
 
 ---
-Nota 06: Un solo producto por orden
-Cada orden que eBay notifica corresponde a **un solo tipo de producto** (un line item). Si un comprador adquiere productos distintos en una misma compra (ej. 3 SSD + 2 laptops), eBay genera **una orden separada por cada producto diferente**. Esto se confirmó en pruebas.
+Nota 06: Una SO por line item (estrategia Opción B)
+Una orden de eBay **puede** traer varios `lineItems[]` (productos distintos). Se confirmó en pruebas que eBay es inconsistente: a veces separa la compra en varias órdenes (1 line item cada una) y a veces la combina en una sola orden con varios line items.
 
-Por eso a lo largo del documento se referencia siempre `data.lineItems[0]`: solo existe un line item por orden. La `quantity` de ese line item sí puede ser mayor a 1 (ej. 3 unidades del mismo SSD), y eso se maneja en la reserva (Nota 03) desglosando una `soline` por unidad.
+**Decisión del equipo:** generar **una `so_info` por cada line item** (una SO por producto). Así el resultado en el CRM es el mismo sin importar cómo agrupe eBay. Ver análisis completo en [`Manejo de multi-line-items.md`](Manejo%20de%20multi-line-items.md).
 
-⏳ **Pendiente por confirmar:** cómo llega la notificación cuando en una misma compra hay varios productos distintos — si eBay envía **una notificación por cada orden** o **una sola notificación con varias órdenes**. Se definirá tras las pruebas del webhook.
+Implicaciones para este mapeo:
+- Se itera `data.lineItems[]`; **cada `lineItem` produce una SO independiente** con su propio listing, rep, reserva y shipment. Las referencias a `data.lineItems[0]` en este documento aplican, por SO, al line item que se está procesando.
+- La `quantity` de un line item puede ser mayor a 1 (ej. 3 unidades del mismo producto); eso se maneja en la reserva (Nota 03) desglosando una `soline` por unidad dentro de esa misma SO.
+- El **customer** se resuelve/crea **una sola vez** por orden (desde `shipTo`, nivel orden) y se reutiliza su `id` en todas las SOs de la orden.
+- **Idempotencia:** la llave es `orderId + orderLineItemId` (ver `proceso.md` — Fase 2). Cada SO guarda `orderId` en `client_PO_Number` y `orderLineItemId` en `reference`.
 
 ---
 Nota 07: Cuentas de eBay y entidad en el CRM
@@ -396,8 +400,8 @@ No se puede si no hay items de inventory reservados; hacerlo solo con los items 
 
 ### `reference`
 - **Descripción:** Referencia de la SO.
-- **Notas:** No aplica
-- **Decision:** Campo reference se le asigna NULL  ✅✅
+- **Notas:** Se usa para guardar el identificador del line item de eBay (estrategia Opción B, ver Nota 06).
+- **Decision:** Campo reference se llena con el `orderLineItemId` del line item que origina la SO (`data.lineItems[].lineItemId`, equivalente al `orderLineItemId` de la notificación). Junto con `client_PO_Number` (= `orderId`) forma la llave de idempotencia `orderId + orderLineItemId`. ✅✅
 
 ### `gross_margin`
 - **Descripción:** Margen calculado usando el `suppliermargin` del PO para cada soline (inventory). Se usa formula para sacar el gross margin.
@@ -535,7 +539,7 @@ $total = floatval($extendCost)
 
 ### `client_PO_Number`
 - **Descripción:** Campo para agregar client PO del cliente.
-- **Notas:** El id de la orden que viene de ebay
+- **Notas:** El id de la orden que viene de ebay. Con la estrategia Opción B (una SO por line item), este valor **se repite** entre las N SOs que se generan de una misma compra de eBay; lo que las distingue es el `reference` (= `orderLineItemId`).
 - **Decision:** Campo client_PO_Number se llena con el valor de campo [orderId] que viene en la response de ebay  ✅ ✅
 
 ### `type`
