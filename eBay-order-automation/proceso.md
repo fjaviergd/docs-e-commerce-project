@@ -26,8 +26,6 @@ Todo lo necesario para implementar está en estos archivos:
 - [`ebay-orders.jsonl`](ebay-orders.jsonl) — logs reales de notificaciones y respuestas de Fulfillment de las 4 cuentas.
 - `../docs-ebay/` — specs oficiales de eBay (OAuth/Identity, Fulfillment `sell_fulfillment_v1_oas3.yaml`, Notification `commerce_notification_v1_oas3.yaml`).
 
-> ⚠️ Existe un archivo `Mapeo de datos.md` (sin el "1") que es una **copia desactualizada**; usar siempre `Mapeo de datos 1.md`.
-
 ---
 
 ## Fase 1 — Configuración de notificaciones en eBay
