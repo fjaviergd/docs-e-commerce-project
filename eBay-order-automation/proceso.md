@@ -84,6 +84,18 @@ Se creará **un endpoint único** (webhook) que reciba los eventos HTTP POST que
 - Con el `orderId` se consulta la Fulfillment API para obtener el detalle completo de la orden.
 - Referencia del payload completo de fulfillment: [`response_example.md`](response_example.md) — Sección 2.
 
+**Validación del endpoint (challenge de eBay):** al registrar el destino, eBay valida la URL con un `GET` que incluye `?challenge_code=...`. El endpoint debe responder `200` con JSON `{ "challengeResponse": <hash> }`, donde:
+
+```
+challengeResponse = SHA-256( challengeCode + verificationToken + endpointURL )   // hex
+```
+
+- `verificationToken` lo defines tú al crear el destino (string secreto, se guarda en config/env).
+- `endpointURL` es la URL pública exacta del webhook.
+- Se debe responder con `Content-Type: application/json`.
+
+**Ack y reproceso:** responder `200` rápido a eBay y procesar (idealmente en cola). Si el endpoint responde error, eBay **reintenta** (se observó `publishAttemptCount` hasta 3). Por eso el procesamiento se apoya en la idempotencia (abajo) para que los reintentos/duplicados no generen SOs repetidas.
+
 **Idempotencia (requisito):** eBay reenvía notificaciones (reintentos con `publishAttemptCount` > 1, y se observaron duplicados con el mismo `notificationId` en los logs). El endpoint/procesamiento **debe ser idempotente**.
 
 Como se genera **una SO por line item** (ver Fase 3 y [`Manejo de multi-line-items.md`](Manejo%20de%20multi-line-items.md)), la llave de deduplicación es **`orderId + orderLineItemId`** (no basta `orderId`, porque un mismo `orderId` produce varias SOs). Cada SO guarda su `orderLineItemId` en el campo `reference`, lo que permite verificar si una línea ya fue procesada antes de crear su SO.
@@ -107,29 +119,80 @@ Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las 
 
 ### 3.2 — Diseño del procedimiento
 
-**Diseño: ⏳ Pendiente · Implementación: ⏳ Pendiente**
+**Diseño: 🔄 En curso · Implementación: ⏳ Pendiente**
 
-Una vez confirmado el mapeo, diseñar el flujo de operaciones:
+#### Ubicación y arquitectura
 
-- Qué tablas consultar y en qué orden.
-- Cómo obtener la información que no viene directamente de eBay (e.g. `rep_id` a partir del SKU, `states_id` a partir del state, datos del warehouse para shipping from).
-- Rutas alternas cuando no se encuentra cierta información (e.g. listing publicado con método viejo, teléfono no disponible, inventory insuficiente).
-- Definir si se genera la SO con status `Open`, `Reserved` o `Partially Reserved` dependiendo de la disponibilidad de inventory.
+- **Módulo nuevo** dentro de `crm-api-nestjs/src/ecommerce/modules/` (p. ej. `ebay-orders`). Se ubica ahí porque todo lo de eBay/ecommerce ya vive en `ecommerce` y reutiliza sus conexiones, entidades, `EbayOauthService` y el patrón de llamadas a eBay.
+- **Escritura directa** a la BD del CRM vía TypeORM (decisión confirmada). Las reglas del mapeo se implementan en este servicio.
+- **Bases de datos involucradas** (conexiones ya configuradas en `app.module.ts`):
+  - **`default` (Central)** — *lectura*: `ecommerce_listings` y `ecommerce_listings_inventory` (resolver rep y qué inventory reservar).
+  - **`gts_crm_db` (CRM)** — *escritura*: `so_info`, `inventory` (reserva), `shipment`; *lectura*: `users`, `locations`, `carriers`, `states`, `po_info`, y `gobig_ebay_linked_accounts` / `gobig_ebay_tokens`.
+
+#### Flujo end-to-end
+
+1. **Webhook** recibe la notificación `ORDER_CONFIRMATION` (endpoint único; ver Fase 2) y responde el challenge de validación de eBay.
+2. **Identificar cuenta y token:** `data.user.userId` → `gobig_ebay_linked_accounts.ebay_user_id` → `id` → `gobig_ebay_tokens` por `ebay_account_id` → access token (refrescar si vencido). *Resolución a nivel sistema, sin `userId` humano* (ver nota de reuso en 3.3).
+3. **Fulfillment:** `GET /sell/fulfillment/v1/order/{orderId}` con `Authorization: Bearer` → detalle con `lineItems[]`.
+4. **Customer** (nivel orden, una sola vez): resolver/crear desde `shipTo` (Nota 01) → `customer_id` reutilizado en las N SOs.
+5. **Por cada `lineItem`** (Opción B, una SO por producto):
+   1. Idempotencia: si ya existe SO con `client_PO_Number = orderId` y `reference = orderLineItemId`, omitir.
+   2. Resolver rep, reservar inventory, crear `so_info`, crear `shipment`.
+6. **Status** por SO según lo reservado (Reserved / Partially Reserved / Open, Nota 03).
+
+#### Resolución de datos que no vienen de eBay (con tablas reales)
+
+- **`rep_id`:** `sku` → `ecommerce_listings.dashboard_user_id` (Central); fallback por iniciales del SKU (Nota 02). Con el id → `users` (CRM) para name/email/phone.
+- **Reserva:** `ecommerce_listings` → `ecommerce_listings_inventory` (Central) → `inventory_id`s → reservar esos registros en `inventory` (CRM). Es **cross-DB**: se leen ids en Central y se actualizan filas en el CRM.
+- **`states_id`:** `shipTo.stateOrProvince` → `states` por `abbr` + `master_id` (CRM); NULL si no hay match (campos de estado en texto sí se guardan).
+- **Shipping from:** `warehouse_id` → `locations` (CRM); company = `locations.companies_id` → `companies.name` (Nota 04).
+- **Carrier:** `shippingCarrierCode` → `CARRIER_MAP` (env) → `carriers` (CRM) (Nota 05).
+
+#### Rutas alternas
+
+- Listing no encontrado (método viejo): no se reserva → SO `Open`, `warehouse_id = 3`.
+- Inventory insuficiente: `Partially Reserved`.
+- Estado no encontrado: `states_id = NULL`.
+
+#### Concurrencia y consistencia
+
+- **Idempotencia:** llave `(client_PO_Number, reference)` = `(orderId, orderLineItemId)`, verificada antes de crear cada SO. Cubre los reenvíos/duplicados de eBay vistos en los logs.
+- **Número `so`:** `último so + 1`, calculado al final dentro de una transacción con lock para evitar colisiones (especialmente con N SOs creadas en ráfaga de una misma orden).
+- **Transacción:** las escrituras al CRM (`so_info` + `inventory` + `shipment` de una SO) van en una transacción de `gts_crm_db`. ⚠️ TypeORM no hace transacción distribuida con la BD Central; las lecturas al Central ocurren antes y fuera de esa transacción.
 
 ### 3.3 — Implementación
 
-**Diseño: ⏳ Pendiente · Implementación: ⏳ Pendiente**
+**Diseño: 🔄 En curso · Implementación: ⏳ Pendiente**
 
-Desarrollo del servicio que, al recibir el `orderId`:
+#### Componentes a construir (en `ecommerce/modules/ebay-orders`)
 
-1. Consulta la Fulfillment API de eBay para obtener el detalle de la orden (con sus `lineItems[]`).
-2. Resuelve/crea el customer desde `shipTo` **una sola vez** por orden (se reutiliza su `id` en todas las SOs de la orden).
-3. **Por cada `lineItem` de la orden** (estrategia Opción B — una SO por producto, ver [`Manejo de multi-line-items.md`](Manejo%20de%20multi-line-items.md)):
-   1. Verifica idempotencia por `orderId + orderLineItemId`; si esa línea ya tiene SO, la omite.
-   2. Crea el registro en `so_info` (con `client_PO_Number = orderId` y `reference = orderLineItemId`).
-   3. Busca y reserva los `inventory` correspondientes al SKU de ese listing.
-   4. Crea el registro en `shipment`.
+- **Controller** — endpoint del webhook (POST notificación) + manejo del challenge de validación (GET).
+- **Servicios:**
+  - *Account/token resolver a nivel sistema* — `ebay_user_id` → cuenta → token (con refresh), **sin** `userId`.
+  - *Fulfillment client* — `getOrder(orderId, token)`.
+  - *Orquestador* — flujo por orden y loop por `lineItem` (Opción B) dentro de transacción.
+  - *Resolvers* — customer (Nota 01), rep (Nota 02), reserva (Nota 03), shipping-from/locations (Nota 04), carrier (Nota 05), states.
+- **Entidades nuevas (`gts_crm_db`):** `SoInfo`, `Shipment` (la del CRM, distinta de la de buybacks), `Location`, `Carrier`, `State`, `PoInfo`; **extender `GtsCrmInventory`** con las columnas de reserva (`so`, `so_id`, `soline`, `status`, `datereserved`, `datereserved2`, `reservedby`, `reservedbyuser_id`, `unitprice`, etc.).
+- **Columna nueva:** agregar `ebay_user_id` a `gobig_ebay_linked_accounts` (tabla + entidad `GobigEbayLinkedAccount`).
+- **DTOs:** payload de notificación y respuesta de Fulfillment.
+- **Config (env):** `CARRIER_MAP`, `EBAY_ENVIRONMENT`, verification token del webhook.
 
-Nota: como eBay a veces separa la compra en varias órdenes y a veces la combina en una con varios line items, dividir siempre en una SO por line item normaliza el resultado en el CRM en ambos casos.
+#### Orden sugerido de construcción
+
+1. Columna `ebay_user_id` + entidad, y poblarla con los `userId` de las 4 cuentas.
+2. Token resolver a nivel sistema (sin `userId`).
+3. Cliente Fulfillment `getOrder`.
+4. Webhook controller (challenge + recepción + idempotencia + encolado).
+5. Entidades CRM y extensión de `inventory`.
+6. Resolvers (customer, rep, reserva, carrier, states, locations).
+7. Orquestador por `lineItem` con transacción y numeración de `so`.
+8. Pruebas con los ejemplos reales ([`response_example.md`](response_example.md) — Secciones 1–3).
+
+#### Reuso explícito del código existente
+
+- **Refresh de token:** replicar la mecánica de `EbayOauthService.refreshToken` (librería `ebay-oauth-nodejs-client`, scopes con `sell.fulfillment` ya incluidos), pero en un resolver propio que entra por `ebay_account_id` **sin** validar `userId`. **No** usar `getValidToken` (depende de `userId` humano).
+- **Llamadas HTTP a eBay:** mismo patrón de los módulos existentes (`@nestjs/axios` `HttpService`, `baseUrl` por `EBAY_ENVIRONMENT`, `getHeaders()` con `Bearer`).
 
 > **Alcance:** el proceso termina al dejar creados/actualizados los registros en `so_info`, `shipment` e `inventory` (estos últimos solo en los pocos campos que se modifican al reservar). **No** incluye generación de etiquetas de envío, cotización de carriers ni integración con ShipEngine; eso queda fuera del alcance.
+
+> **Supuestos a validar con el equipo:** (1) escritura directa a `gts_crm_db` (confirmado); (2) la transacción cubre solo el CRM, no la BD Central; (3) el catálogo `states` cubre los envíos US/MX esperados.

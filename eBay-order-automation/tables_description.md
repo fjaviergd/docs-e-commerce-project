@@ -865,6 +865,41 @@ warehouseiq,varchar(25),YES,"",,""
 location_locked,int,YES,"","0",""
 
 ---
+
+DESCRIBE gobig_ebay_linked_accounts;
+
+"Field","Type","Null","Key","Default","Extra"
+id,int,NO,PRI,,auto_increment
+name,varchar(100),YES,"",,""
+mode,varchar(10),YES,"",,""
+companies_id,int,NO,MUL,"1",""
+sync_store,int,YES,"","0",""
+master_id,int,YES,MUL,,""
+ebay_user_id,varchar(50),YES,"",,""
+
+> Nota: `ebay_user_id` es la **columna nueva** que se agrega para esta implementación. Almacena el `userId` que viene en la notificación de eBay (`data.user.userId`) y es la llave para identificar la cuenta vendedora. Ver `proceso.md` — Fase 1.
+
+---
+
+DESCRIBE gobig_ebay_tokens;
+
+"Field","Type","Null","Key","Default","Extra"
+id,int,NO,PRI,,auto_increment
+token,text,YES,"",,""
+authorization_code,text,YES,"",,""
+refresh_token,text,YES,"",,""
+ebay_account_id,int,NO,MUL,,""
+Authnauth_Token,text,YES,"",,""
+SessionID,varchar(128),YES,"",,""
+Authnauth_Expires,varchar(50),YES,"",,""
+orders_lastsync,datetime,YES,"",,""
+expired,int,YES,"","0",""
+master_id,int,YES,MUL,,""
+access_token_expires,datetime,YES,"",,""
+
+> Nota: `ebay_account_id` referencia a `gobig_ebay_linked_accounts.id`. Con ese id se obtiene el `token` / `refresh_token` para autenticar la llamada a Fulfillment (refrescar si `expired = 1` o si `access_token_expires` está vencido). Ver `proceso.md` — Fase 1.
+
+---
 ---
 ### DATABASE CENTRAL
 
