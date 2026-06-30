@@ -330,7 +330,12 @@ La identificación de la cuenta (vía `data.user.userId` de la notificación, en
 - **Notas:** Hacer match entre el state que de ebay con el de esta tabla para establecer el id
   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince] ✅ ✅
 - **Decision:**  Campo states_id se llena de la siguiente forma: el valor que venga en [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.stateOrProvince] se toma y se busca en la tabla `states` del CRM por el campo `abbr` y `master_id = 1`. ✅ ✅
-  ⏳ **Pendiente:** definir el fallback cuando el state no exista en la tabla. eBay vende solo a USA y México, y todos los estados de ambos países ya están registrados, pero falta decidir qué hacer si llega un estado fuera de esos catálogos.
+
+  **Fallback cuando no se encuentra el state:** si el `abbr` no existe en la tabla `states`, dejar `states_id = NULL` (el campo es nullable). No afecta nada aguas abajo porque `tax = 0` y `cleartax = 1` (no se aplican taxes), y `states_id` solo sirve para la lógica de impuestos.
+
+  **Importante — los campos de estado en texto sí se registran siempre:** `contactstate`, `shiptostate` (so_info) y `to_state` (shipment) se llenan directo con `shipTo.contactAddress.stateOrProvince` de eBay, **independientemente** de si hubo match en `states`. Son la dirección de envío real y nunca se dejan vacíos.
+
+  Contexto: eBay maneja los envíos internacionales; nosotros solo registramos la dirección de envío dentro de USA (locaciones/forwarders de eBay), por lo que en la práctica el `shipTo` siempre debería traer un estado US válido. El fallback a `NULL` es manejo defensivo de un caso borde.
 
 ### `tax`
 - **Descripción:** Valor del tax.
