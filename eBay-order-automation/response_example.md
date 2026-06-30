@@ -220,8 +220,18 @@ Response completa con todos los datos de la orden. Incluye `addressLine2` en buy
   }
 }
 ```
-nuevas
-```
+
+---
+
+## 3. Ejemplos adicionales — órdenes con múltiples line items
+
+Ejemplos reales del log para órdenes con **más de un line item** y para la cuenta `greenteksolutions-c`. Son órdenes de **prueba internas** (precios de $1, títulos "test"), pero útiles para ver la estructura.
+
+> **Nota:** estos ejemplos muestran órdenes con **2 line items** en un mismo `orderId`. Revisar contra el supuesto de "un producto por orden" (ver `Mapeo de datos 1.md` — Nota 06).
+
+### 3.1 Notificación — orden `19-14819-32278` · cuenta `greenteksolutions` (2 line items)
+
+```json
 {
   "type": "notification_received",
   "timestamp": "2026-06-29T22:20:47.461Z",
@@ -262,6 +272,11 @@ nuevas
     }
   }
 }
+```
+
+### 3.2 Notificación — orden `25-14809-32185` · cuenta `greenteksolutions-c` (2 line items)
+
+```json
 {
   "type": "notification_received",
   "timestamp": "2026-06-29T22:24:04.062Z",
@@ -302,8 +317,11 @@ nuevas
     }
   }
 }
-// fullfillment
+```
 
+### 3.3 Fulfillment — orden `25-14809-32185` · cuenta `greenteksolutions-c`
+
+```json
 {
   "orderId": "25-14809-32185",
   "legacyOrderId": "25-14809-32185",
@@ -509,8 +527,11 @@ nuevas
     "currency": "USD"
   }
 }
+```
 
+### 3.4 Fulfillment — orden `19-14819-32278` · cuenta `greenteksolutions`
 
+```json
 {
   "orderId": "19-14819-32278",
   "legacyOrderId": "19-14819-32278",
