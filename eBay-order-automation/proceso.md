@@ -193,6 +193,9 @@ Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las 
 - **Refresh de token:** replicar la mecánica de `EbayOauthService.refreshToken` (librería `ebay-oauth-nodejs-client`, scopes con `sell.fulfillment` ya incluidos), pero en un resolver propio que entra por `ebay_account_id` **sin** validar `userId`. **No** usar `getValidToken` (depende de `userId` humano).
 - **Llamadas HTTP a eBay:** mismo patrón de los módulos existentes (`@nestjs/axios` `HttpService`, `baseUrl` por `EBAY_ENVIRONMENT`, `getHeaders()` con `Bearer`).
 
-> **Alcance:** el proceso termina al dejar creados/actualizados los registros en `so_info`, `shipment` e `inventory` (estos últimos solo en los pocos campos que se modifican al reservar). **No** incluye generación de etiquetas de envío, cotización de carriers ni integración con ShipEngine; eso queda fuera del alcance.
+> **Alcance:** el proceso termina al dejar creados/actualizados los registros en `so_info`, `shipment` e `inventory` (estos últimos solo en los pocos campos que se modifican al reservar). **No** incluye generación de etiquetas de envío, cotización de carriers ni integración con ShipEngine; eso queda fuera del alcance. Tampoco escribe en la BD Central: habrá un **proceso posterior** (que actualizará la Central) a implementar **después** de esta entrega; sus detalles se definirán en ese momento.
 
-> **Supuestos a validar con el equipo:** (1) escritura directa a `gts_crm_db` (confirmado); (2) la transacción cubre solo el CRM, no la BD Central; (3) el catálogo `states` cubre los envíos US/MX esperados.
+> **Decisiones cerradas:**
+> 1. **Escritura directa a `gts_crm_db`** vía TypeORM — confirmado.
+> 2. **Transacción solo en el CRM** (no distribuida): en este flujo a la Central solo se lee, así que todas las escrituras (`so_info` + `inventory` + `shipment`) caben en una transacción atómica del CRM. La escritura de vuelta en Central queda para el proceso posterior (ver Alcance).
+> 3. **Catálogo `states`**: confirmado que ya están todos los estados de US y MX (`master_id = 1`). El fallback a `states_id = NULL` se mantiene solo como defensa.
