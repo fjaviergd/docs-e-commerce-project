@@ -15,6 +15,21 @@ Cada fase indica dos dimensiones: estado del **diseño** y estado de la **implem
 
 ---
 
+## Documentos de referencia
+
+Todo lo necesario para implementar está en estos archivos:
+
+- [`Mapeo de datos 1.md`](Mapeo%20de%20datos%201.md) — **mapeo campo por campo** (canónico): qué valor va a cada columna de `so_info`, `shipment` e `inventory`, con las Notas 01–07 (customer, rep, reserva, locations, carrier, multi-line, cuentas).
+- [`Manejo de multi-line-items.md`](Manejo%20de%20multi-line-items.md) — decisión y análisis de la estrategia multi-line (Opción B).
+- [`tables_description.md`](tables_description.md) — **DDL de todas las tablas** involucradas (CRM `gts_crm_db` y Central), incluidas `gobig_ebay_linked_accounts` y `gobig_ebay_tokens`.
+- [`response_example.md`](response_example.md) — ejemplos de notificación (Sección 1), Fulfillment (Sección 2) y casos multi-line (Sección 3).
+- [`ebay-orders.jsonl`](ebay-orders.jsonl) — logs reales de notificaciones y respuestas de Fulfillment de las 4 cuentas.
+- `../docs-ebay/` — specs oficiales de eBay (OAuth/Identity, Fulfillment `sell_fulfillment_v1_oas3.yaml`, Notification `commerce_notification_v1_oas3.yaml`).
+
+> ⚠️ Existe un archivo `Mapeo de datos.md` (sin el "1") que es una **copia desactualizada**; usar siempre `Mapeo de datos 1.md`.
+
+---
+
 ## Fase 1 — Configuración de notificaciones en eBay
 
 **Diseño: ✅ Completado · Implementación: ⏳ Pendiente** (configurar suscripciones en eBay)
@@ -115,7 +130,7 @@ Esta fase se divide en las siguientes sub-fases:
 Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las tablas del CRM, y tomar las decisiones sobre valores por defecto, lógica de fallback y campos pendientes de confirmar.
 
 - Incluir el mapeo de `sellerId` → cuenta del CRM, y validar que coincide con la cuenta identificada por `data.user.userId` en la notificación (ver Fase 1).
-- Referencia: [`Mapeo de datos.md`](Mapeo%20de%20datos.md)
+- Referencia: [`Mapeo de datos 1.md`](Mapeo%20de%20datos%201.md) (archivo canónico).
 
 ### 3.2 — Diseño del procedimiento
 
