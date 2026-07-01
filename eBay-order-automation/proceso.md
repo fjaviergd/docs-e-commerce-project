@@ -119,6 +119,8 @@ Como se genera **una SO por line item** (ver Fase 3 y [`Manejo de multi-line-ite
 
 **Diseño: 🔄 En curso · Implementación: ⏳ Pendiente**
 
+> **Estrategia (decidida):** se genera **una SO por cada line item** — *Opción B*. Una orden de eBay con N line items produce N SOs. El análisis y la justificación de esta decisión (vs. la alternativa de combinar en una sola SO) están en [`Manejo de multi-line-items.md`](Manejo%20de%20multi-line-items.md).
+
 Esta fase se divide en las siguientes sub-fases:
 
 ### 3.1 — Revisión y confirmación del mapeo de datos
