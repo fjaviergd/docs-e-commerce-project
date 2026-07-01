@@ -23,7 +23,9 @@ Guía de cómo organizar el código en `crm-api-nestjs/src/ecommerce/modules/` p
 | **Ingreso** | `ebay-notifications` (endpoint único, challenge, verificación, dedup, dispatcher) | Todos los eventos |
 | **Orquestadores (facade)** | `ebay-orders` (confirmación=Opción B; luego cancelación), `ebay-offers` (futuro) | No — uno por feature |
 | **Servicios eBay compartidos** | `ebay-oauth` (resolver de token a nivel sistema), `ebay-fulfillment` (cliente Fulfillment) | Todos los eventos |
-| **Dominio CRM (reutilizable)** | `sales-orders`, `crm-shipments`, `inventory-reservation`, `customers`, `crm-lookups` | Órdenes, cancelaciones, etc. |
+| **Dominio CRM (reutilizable)** | `gts-crm-sales-orders`, `gts-crm-shipments`, `gts-crm-lookups` (nuevos) + `gts-crm-inventory`, `gts-crm-users` (extender existentes) | Órdenes, cancelaciones, etc. |
+
+> **Convención de prefijos** (consistente con el repo): `ebay-*` = concerns de la API de eBay · `ecommerce-*` = BD Central · `gts-crm-*` = BD del CRM (`gts_crm_db`). El prefijo indica a qué base de datos / dominio pertenece el módulo.
 | **Lecturas Central** | `ecommerce-listings`, `ecommerce-listings_inventory` | Resolver rep y candidatos a reservar |
 
 ---
@@ -37,17 +39,16 @@ ebay-fulfillment/       ← cliente Fulfillment API (getOrder, …) [compartido]
 ebay-orders/            ← ORQUESTADOR "órdenes" (confirmación = Opción B; luego cancelación)
 ebay-offers/            ← (futuro) orquestador de ofertas / negociación
 
-sales-orders/           ← dominio CRM: so_info (crear/void, numeración, transacción)
-crm-shipments/          ← dominio CRM: shipment (distinto del de buybacks)
-inventory-reservation/  ← dominio CRM: reservar / liberar inventory
-customers/              ← dominio CRM: resolver / crear user desde shipTo
-crm-lookups/            ← dominio CRM: carriers / states / locations
+gts-crm-sales-orders/   ← dominio CRM: so_info (crear/void, numeración, transacción)
+gts-crm-shipments/      ← dominio CRM: shipment (distinto del de buybacks)
+gts-crm-lookups/        ← dominio CRM: carriers / states / locations
 
-# Reutilizados (ya existen):
+# Reutilizados / extendidos (ya existen):
+gts-crm-inventory/             (extender: reservar / liberar inventory)
+gts-crm-users/                 (extender: resolver / crear customer desde shipTo)
 ebay-oauth/                    (+ método resolver a nivel sistema, sin userId humano)
 ecommerce-listings/            (lectura Central: rep + candidatos a reservar)
 ecommerce-listings_inventory/  (lectura Central)
-gts-crm-inventory / gts-crm-users
 ```
 
 ---
@@ -75,12 +76,12 @@ flowchart TD
     FUL["ebay-fulfillment<br/>getOrder"]
   end
 
-  subgraph domain["Dominio CRM (reutilizable)"]
-    SO["sales-orders<br/>so_info + numeración + tx"]
-    SH["crm-shipments"]
-    RES["inventory-reservation"]
-    CU["customers"]
-    LK["crm-lookups<br/>carriers / states / locations"]
+  subgraph domain["Dominio CRM — gts-crm-* (reutilizable)"]
+    SO["gts-crm-sales-orders<br/>so_info + numeración + tx"]
+    SH["gts-crm-shipments"]
+    RES["gts-crm-inventory<br/>(extender: reserva)"]
+    CU["gts-crm-users<br/>(extender: customer)"]
+    LK["gts-crm-lookups<br/>carriers / states / locations"]
   end
 
   LST["ecommerce-listings<br/>(+ listings_inventory)"]
@@ -121,8 +122,8 @@ flowchart TD
 
 | Feature futura | Reutiliza | Agrega |
 |---|---|---|
-| **Cancelación de órdenes** | ingreso, token resolver, fulfillment, `sales-orders` (void), `inventory-reservation` (liberar) | orquestador de cancelación |
-| **Ofertas / negociación** | ingreso*, token resolver, `crm-lookups`, servicios de dominio según aplique | orquestador de ofertas (+ cliente Negotiation API) |
+| **Cancelación de órdenes** | ingreso, token resolver, fulfillment, `gts-crm-sales-orders` (void), `gts-crm-inventory` (liberar) | orquestador de cancelación |
+| **Ofertas / negociación** | ingreso*, token resolver, `gts-crm-lookups`, servicios de dominio según aplique | orquestador de ofertas (+ cliente Negotiation API) |
 
 \* No todo evento futuro llega por webhook: la negociación de ofertas puede ser **pull** (Negotiation API). En ese caso el disparo no pasa por `ebay-notifications`, pero el orquestador reutiliza los mismos servicios de dominio.
 
