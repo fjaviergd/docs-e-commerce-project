@@ -21,6 +21,7 @@ Todo lo necesario para implementar está en estos archivos:
 
 - [`Mapeo de datos 1.md`](Mapeo%20de%20datos%201.md) — **mapeo campo por campo** (canónico): qué valor va a cada columna de `so_info`, `shipment` e `inventory`, con las Notas 01–07 (customer, rep, reserva, locations, carrier, multi-line, cuentas).
 - [`Manejo de multi-line-items.md`](Manejo%20de%20multi-line-items.md) — decisión y análisis de la estrategia multi-line (Opción B).
+- [`Arquitectura del codigo.md`](Arquitectura%20del%20codigo.md) — cómo organizar el código en módulos (ingreso compartido, orquestadores por evento, dominio CRM) con diagrama; guía para reutilizar al agregar más webhooks/eventos.
 - [`tables_description.md`](tables_description.md) — **DDL de todas las tablas** involucradas (CRM `gts_crm_db` y Central), incluidas `gobig_ebay_linked_accounts` y `gobig_ebay_tokens`.
 - [`response_example.md`](response_example.md) — ejemplos de notificación (Sección 1), Fulfillment (Sección 2) y casos multi-line (Sección 3).
 - [`ebay-orders.jsonl`](ebay-orders.jsonl) — logs reales de notificaciones y respuestas de Fulfillment de las 4 cuentas.
