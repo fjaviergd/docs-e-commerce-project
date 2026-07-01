@@ -64,7 +64,7 @@ Esto se confirmó contra los logs reales del backend ([`ebay-orders.jsonl`](ebay
 
 **Resolución cuenta → token (tablas):**
 
-1. **Identificar la cuenta** — buscar el `userId` de la notificación en la tabla `gobig_ebay_linked_accounts`, columna **`ebay_user_id`** (columna nueva que se agrega para almacenar el `userId` de eBay). El registro encontrado da el `id` de la cuenta vinculada.
+1. **Identificar la cuenta** — buscar el `userId` de la notificación en la tabla `gobig_ebay_linked_accounts`, columna **`ebay_user_id`** (ya existe en la tabla y está poblada con los `userId` de las cuentas). El registro encontrado da el `id` de la cuenta vinculada.
 2. **Obtener el token** — con ese `id` buscar en la tabla `gobig_ebay_tokens` por `ebay_account_id` (FK → `gobig_ebay_linked_accounts.id`) y tomar el `refresh_token` / `token` (access token) para autenticar la llamada a Fulfillment. Revisar `expired` / `access_token_expires` y refrescar el access token si está vencido.
 3. **Confirmación secundaria** — validar que el `sellerId` de la respuesta de Fulfillment corresponde a la cuenta identificada.
 
@@ -77,7 +77,7 @@ Mapeo de las 4 cuentas (`ebay_user_id` es la llave inmutable):
 | C | greenteksolutions-c | tF7soxK5TPG |
 | D | greenteksolutions-d | LECXHKWWRzO |
 
-`gobig_ebay_linked_accounts` — campos relevantes: `id` (PK), `name`, `companies_id`, `master_id`, **`ebay_user_id` (nuevo)**.
+`gobig_ebay_linked_accounts` — campos relevantes: `id` (PK), `name`, `companies_id`, `master_id`, **`ebay_user_id`** (ya existe y poblada).
 
 `gobig_ebay_tokens` — campos relevantes: `ebay_account_id` (FK → `gobig_ebay_linked_accounts.id`), `token`, `refresh_token`, `access_token_expires`, `expired`.
 
@@ -189,13 +189,13 @@ Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las 
   - *Orquestador* — flujo por orden y loop por `lineItem` (Opción B) dentro de transacción.
   - *Resolvers* — customer (Nota 01), rep (Nota 02), reserva (Nota 03), shipping-from/locations (Nota 04), carrier (Nota 05), states.
 - **Entidades nuevas (`gts_crm_db`):** `SoInfo`, `Shipment` (la del CRM, distinta de la de buybacks), `Location`, `Carrier`, `State`, `PoInfo`; **extender `GtsCrmInventory`** con las columnas de reserva (`so`, `so_id`, `soline`, `status`, `datereserved`, `datereserved2`, `reservedby`, `reservedbyuser_id`, `unitprice`, etc.).
-- **Columna nueva:** agregar `ebay_user_id` a `gobig_ebay_linked_accounts` (tabla + entidad `GobigEbayLinkedAccount`).
+- **Columna `ebay_user_id`:** ya existe en la tabla `gobig_ebay_linked_accounts` y está poblada con los `userId` de las cuentas; solo falta mapearla en la entidad `GobigEbayLinkedAccount`.
 - **DTOs:** payload de notificación y respuesta de Fulfillment.
 - **Config (env):** `CARRIER_MAP`, `EBAY_ENVIRONMENT`, verification token del webhook.
 
 #### Orden sugerido de construcción
 
-1. Columna `ebay_user_id` + entidad, y poblarla con los `userId` de las 4 cuentas.
+1. Mapear la columna `ebay_user_id` (ya existe y poblada) en la entidad `GobigEbayLinkedAccount`.
 2. Token resolver a nivel sistema (sin `userId`).
 3. Cliente Fulfillment `getOrder`.
 4. Webhook controller (challenge + recepción + idempotencia + encolado).

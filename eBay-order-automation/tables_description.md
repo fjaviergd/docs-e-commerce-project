@@ -877,7 +877,7 @@ sync_store,int,YES,"","0",""
 master_id,int,YES,MUL,,""
 ebay_user_id,varchar(50),YES,"",,""
 
-> Nota: `ebay_user_id` es la **columna nueva** que se agrega para esta implementación. Almacena el `userId` que viene en la notificación de eBay (`data.user.userId`) y es la llave para identificar la cuenta vendedora. Ver `proceso.md` — Fase 1.
+> Nota: `ebay_user_id` **ya existe en la tabla y está poblada** con los `userId` de las cuentas. Almacena el `userId` que viene en la notificación de eBay (`data.user.userId`) y es la llave para identificar la cuenta vendedora. Ver `proceso.md` — Fase 1.
 
 ---
 
