@@ -139,8 +139,8 @@ Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las 
 
 #### Ubicación y arquitectura
 
-- **Módulo nuevo** dentro de `crm-api-nestjs/src/ecommerce/modules/` (p. ej. `ebay-orders`). Se ubica ahí porque todo lo de eBay/ecommerce ya vive en `ecommerce` y reutiliza sus conexiones, entidades, `EbayOauthService` y el patrón de llamadas a eBay.
-- **Escritura directa** a la BD del CRM vía TypeORM (decisión confirmada). Las reglas del mapeo se implementan en este servicio.
+- **Módulos nuevos** dentro de `crm-api-nestjs/src/ecommerce/modules/`, siguiendo la organización **canónica** de [`Arquitectura del codigo.md`](Arquitectura%20del%20codigo.md): ingreso compartido (`ebay-notifications`), cliente Fulfillment (`ebay-fulfillment`), orquestador de la feature (`ebay-orders`) y dominio CRM (`gts-crm-*`). Se ubican en `ecommerce` porque ahí ya viven las conexiones, entidades, `EbayOauthService` y el patrón de llamadas a eBay. *(Nota: NO es un único módulo `ebay-orders` monolítico — ver la guía de arquitectura para la separación.)*
+- **Escritura directa** a la BD del CRM vía TypeORM (decisión confirmada). Las reglas del mapeo se implementan en los servicios de dominio `gts-crm-*`.
 - **Bases de datos involucradas** (conexiones ya configuradas en `app.module.ts`):
   - **`default` (Central)** — *lectura*: `ecommerce_listings` y `ecommerce_listings_inventory` (resolver rep y qué inventory reservar).
   - **`gts_crm_db` (CRM)** — *escritura*: `so_info`, `inventory` (reserva), `shipment`; *lectura*: `users`, `locations`, `carriers`, `states`, `po_info`, y `gobig_ebay_linked_accounts` / `gobig_ebay_tokens`.
@@ -180,7 +180,7 @@ Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las 
 
 **Diseño: 🔄 En curso · Implementación: ⏳ Pendiente**
 
-#### Componentes a construir (en `ecommerce/modules/ebay-orders`)
+#### Componentes a construir (distribuidos en módulos — ver [`Arquitectura del codigo.md`](Arquitectura%20del%20codigo.md))
 
 - **Controller** — endpoint del webhook (POST notificación) + manejo del challenge de validación (GET).
 - **Servicios:**
