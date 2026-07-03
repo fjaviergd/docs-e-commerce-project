@@ -2,7 +2,9 @@
 
 Documentación del flujo completo para interceptar ventas de eBay y registrarlas automáticamente en el CRM (tablas `so_info`, `inventory`, `shipment`).
 
-> **Nota:** este documento es el **plan/diseño**. Nada está implementado todavía; los estados se refieren al avance del diseño y, por separado, al de la implementación.
+> **Nota:** este documento fue el **plan/diseño**; la implementación **ya está construida y validada end-to-end** (2026-07-03). El código vive en `crm-api-nestjs`, rama `feature/ebay-order-automation` (subida a origin para revisión del equipo). Los estados de cada fase reflejan diseño + implementación.
+>
+> **Estado de implementación (2026-07-03):** el webhook único está operativo; se procesaron **órdenes reales** (nacionales e internacionales/eIS) creando `so_info` + reserva de `inventory` + `shipment`, con idempotencia (`orderId + orderLineItemId`) y numeración de `so` validadas. El **precio de venta** se toma del line item de eBay (`lineItemCost / quantity`, ver `Mapeo de datos 1.md`). **Pendientes de endurecimiento (no bloqueantes):** ACK rápido + procesamiento asíncrono (cola), job de reconciliación (polling `getOrders`) para notificaciones que eBay no logre entregar, endpoint público estable e índice único en `so_info(client_PO_Number, reference)`.
 
 ### Leyenda de estados
 
@@ -31,7 +33,7 @@ Todo lo necesario para implementar está en estos archivos:
 
 ## Fase 1 — Configuración de notificaciones en eBay
 
-**Diseño: ✅ Completado · Implementación: ⏳ Pendiente** (configurar suscripciones en eBay)
+**Diseño: ✅ Completado · Implementación: ✅ Completada** (las 4 cuentas suscritas a `ORDER_CONFIRMATION` → destino del webhook, ENABLED)
 
 Se registrarán las 4 cuentas de vendedor en la Notification API de eBay para que eBay envíe notificaciones automáticas al ocurrir una venta. La suscripción filtrará únicamente eventos del topic `ORDER_CONFIRMATION`, que corresponde a compras con pago completado.
 
@@ -89,7 +91,7 @@ Mapeo de las 4 cuentas (`ebay_user_id` es la llave inmutable):
 
 ## Fase 2 — Endpoint para recibir notificaciones
 
-**Diseño: ✅ Completado · Implementación: ⏳ Pendiente**
+**Diseño: ✅ Completado · Implementación: ✅ Completada** (endpoint único + challenge validados en producción)
 
 Se creará **un endpoint único** (webhook) que reciba los eventos HTTP POST que eBay envía para las 4 cuentas. El endpoint aceptará el payload de notificación y lo pondrá en cola para su procesamiento.
 
@@ -118,7 +120,7 @@ Como se genera **una SO por line item** (ver Fase 3 y [`Manejo de multi-line-ite
 
 ## Fase 3 — Procesamiento de la orden
 
-**Diseño: 🔄 En curso · Implementación: ⏳ Pendiente**
+**Diseño: ✅ Completado · Implementación: ✅ Completada**
 
 > **Estrategia (decidida):** se genera **una SO por cada line item** — *Opción B*. Una orden de eBay con N line items produce N SOs. El análisis y la justificación de esta decisión (vs. la alternativa de combinar en una sola SO) están en [`Manejo de multi-line-items.md`](Manejo%20de%20multi-line-items.md).
 
@@ -126,7 +128,7 @@ Esta fase se divide en las siguientes sub-fases:
 
 ### 3.1 — Revisión y confirmación del mapeo de datos
 
-**Diseño: 🔄 En curso · Implementación: ⏳ Pendiente**
+**Diseño: ✅ Completado · Implementación: ✅ Completada**
 
 Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las tablas del CRM, y tomar las decisiones sobre valores por defecto, lógica de fallback y campos pendientes de confirmar.
 
@@ -135,7 +137,7 @@ Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las 
 
 ### 3.2 — Diseño del procedimiento
 
-**Diseño: 🔄 En curso · Implementación: ⏳ Pendiente**
+**Diseño: ✅ Completado · Implementación: ✅ Completada**
 
 #### Ubicación y arquitectura
 
@@ -178,7 +180,7 @@ Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las 
 
 ### 3.3 — Implementación
 
-**Diseño: 🔄 En curso · Implementación: ⏳ Pendiente**
+**Diseño: ✅ Completado · Implementación: ✅ Completada**
 
 #### Componentes a construir (distribuidos en módulos — ver [`Arquitectura del codigo.md`](Arquitectura%20del%20codigo.md))
 
