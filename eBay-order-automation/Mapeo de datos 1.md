@@ -176,7 +176,10 @@ Caso 1: Al buscar el [data.lineItems[0].sku] en ecommerce_listings SI se encontr
 Caso 2: Al buscar el [data.lineItems[0].sku] en ecommerce_listings NO se encontro entonces no haremos la reserva y el status quedara solo como "Open". Aqui como no hay productos se tiene que asignar la warehouse_id de la so_info con el valor 3 por defecto.  
 
 **SO en status "Reserved" o "Partially Reserved" — valores financieros se calculan con los items reservados:**
-Cuando se reserva al menos un item, los campos financieros se calculan usando los registros de `inventory` que fueron efectivamente reservados:
+Cuando se reserva al menos un item, los campos financieros se calculan usando los registros de `inventory` que fueron efectivamente reservados.
+
+> ⚠️ **Precio de venta (actualización 2026-07-03):** antes de estos cálculos, a cada item reservado se le asigna `unitprice = lineItemCost / quantity` del line item de eBay (precio realmente vendido; el `lineItemCost` es el total de la línea). Se hace **siempre** (Best Offer puede cambiar el precio). Ver campo `unitprice` en la sección `inventory`.
+
 - `extendedcost` → suma de `unitprice` de los items reservados
 - `estimated_cost` → suma de `purchasecost` de los items reservados
 - `gross_margin`, `margin_percentage` y `profit` → calculados con la fórmula de margen sobre los items reservados (ver descripción de esos campos en `so_info`)
@@ -348,7 +351,7 @@ La identificación de la cuenta (vía `data.user.userId` de la notificación, en
 
 ### `subtotal`
 - **Descripción:** Valor de total antes de taxes.
-- **Notas:** Ya **no** se usa el valor de eBay. Se calcula con valores internos del CRM: la misma fórmula que `total` pero sin el `tax`.
+- **Notas:** Se calcula con la fórmula interna del CRM (misma que `total` pero sin `tax`). ⚠️ **Aclaración (2026-07-03):** el insumo `extendedcost` = suma de `unitprice` de los items reservados, y ese `unitprice` **sí proviene del precio vendido en eBay** (`lineItemCost / quantity`), asignado al item antes de calcular (ver campo `unitprice` en la sección `inventory`). Es decir: el precio de venta viene de eBay, pero se escribe primero en `inventory.unitprice` y la SO se calcula con la fórmula del CRM sobre ese valor.
 - **Decision:** Campo subtotal se calcula así:
 
 ```php
@@ -379,7 +382,7 @@ No se puede si no hay items de inventory reservados; hacerlo solo con los items 
 
 ### `extendedcost`
 - **Descripción:** Suma del valor `unitprice` de todos los solines (inventarios).
-- **Notas:** No se puede si no hay items de inventory reservados, hacerlo solo con los items reservados que se encuentren, en caso de no haber ningun item reservado poner 0.
+- **Notas:** No se puede si no hay items de inventory reservados, hacerlo solo con los items reservados que se encuentren, en caso de no haber ningun item reservado poner 0. ⚠️ El `unitprice` de cada item se asigna con el precio vendido en eBay (`lineItemCost / quantity`) **antes** de esta suma (ver campo `unitprice` en la sección `inventory`).
 - **Decision:** Campo extendedcost se le asigna la suma del campo unitprice de cada uno de los items reservados de la tabla inventory ✅ ✅
 
 ### `estimated_cost`
@@ -1005,9 +1008,9 @@ Estos campos aparecen en las instrucciones de reservar item y existen en la tabl
 
 ### `unitprice`
 - **Descripción:** Precio de venta del inventory reservado.
-- **Notas:** query ony
-- **Decision:** Si ✅ ✅
-- **Columna referencia:**
+- **Notas:** ⚠️ **Actualización (2026-07-03):** el `unitprice` de cada item reservado **se asigna con el precio realmente vendido en eBay**, tomado del line item de la orden: `unitprice = lineItemCost / quantity` (el `lineItemCost` de la Fulfillment API es el **total de la línea**, por eso se divide entre la cantidad). Se asigna **siempre**, aunque el item ya tenga un `unitprice`, porque con Best Offer el precio final de venta puede diferir del listing. La asignación ocurre **antes** de calcular los campos financieros de la SO (`extendedcost`, `subtotal`, `total`, márgenes), y se persiste junto con la reserva.
+- **Decision:** Si — `unitprice` = precio unitario vendido en eBay (`lineItemCost / quantity`), asignado antes de los cálculos. ✅ ✅
+- **Columna referencia:** eBay `lineItems[].lineItemCost` ÷ `lineItems[].quantity`
 
 ### `status`
 - **Descripción:** Cambiar a `Reserved` al reservar el item.
