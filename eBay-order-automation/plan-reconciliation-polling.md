@@ -93,7 +93,7 @@ La API de eBay no permite filtrar por `orderPaymentStatus` directamente. El filt
 
 ```
 order es elegible si:
-  order.orderPaymentStatus === 'PAID'
+  (order.orderPaymentStatus === 'PAID' OR order.orderPaymentStatus === 'PARTIALLY_REFUNDED')
   AND order.cancelStatus.cancelState !== 'CANCELED'
   AND order.cancelStatus.cancelState !== 'IN_PROGRESS'
 ```
@@ -233,7 +233,7 @@ El frontend ya tiene acceso a la API interna. Se agrega un botón en la sección
 | Ventana de fecha demasiado corta y se pierden órdenes | Ventana de 7h para ejecuciones cada 6h da 1h de margen. Para el arranque inicial, ejecutar manual con rango amplio (ej. últimas 72h). |
 | `getOrders` no retorna órdenes eIS | **Descartado** — confirmado con datos reales (2026-07-03) que `getOrders` sí incluye órdenes eIS. No requiere manejo especial. |
 | Orden `cancelState: IN_PROGRESS` que luego se reactiva | El filtro la omite en la ejecución actual. Si la cancelación se revierte, en la siguiente ejecución del job aparecerá con `cancelState: NONE_REQUESTED` y `orderPaymentStatus: PAID`, y se procesará normalmente. |
-| Orden reembolsada parcialmente (`PARTIALLY_REFUNDED`) | No se observó en los datos reales, pero se recomienda tratarla igual que `PAID` (el pago original existió y la orden se completó). Confirmar si aplica al negocio antes de implementar. |
+| Orden reembolsada parcialmente (`PARTIALLY_REFUNDED`) | **Decisión confirmada:** tratar igual que `PAID`. El pago original existió, el producto se despacha; el reembolso parcial es una transacción financiera separada que no afecta la SO. |
 
 ---
 
