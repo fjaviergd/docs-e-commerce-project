@@ -1,7 +1,7 @@
 # Plan: Job de Reconciliación — Polling `getOrders` (eBay Fulfillment API)
 
-**Fecha:** 2026-07-03  
-**Estado:** Diseño — pendiente de implementación  
+**Fecha:** 2026-07-03
+**Estado:** Diseño — Implementado
 **Contexto:** El webhook `ORDER_CONFIRMATION` ya está operativo y procesado end-to-end. Este plan cubre el **job de reconciliación** identificado como pendiente en `proceso.md` (sección de "Pendientes de endurecimiento"): consultar `getOrders` cada 6 horas para capturar órdenes que eBay no notificó (internacionales/eIS, fallas de red, reintentos agotados).
 
 ---
@@ -138,7 +138,7 @@ Response: { "status": "ok", "accounts": 4, "ordersChecked": N, "newSosCreated": 
 - **No requiere autenticación adicional** más allá del guard ya existente en la API (mismo nivel que otros endpoints internos). Verificar qué guard usa el proyecto y aplicar el mismo.
 
 > **Consideración de tiempo de respuesta:** si hay muchas órdenes, el proceso puede tardar. Dos opciones:
-> - **Opción A (recomendada para este plan):** respuesta sincrónica con timeout de 30s por cuenta; si tarda más, devolver `202 Accepted` con un `jobId` y exponer `GET /ebay/reconciliation/status/:jobId`.
+> - **Opción A (recomendada para este plan):** respuesta sincrónica con timeout de 30s por cuenta; si tarda más, devolver `202 Accepted` con un `jobId` y exponer `GET /ebay/reconciliation/status/:jobId`. Se confirma el uso de la opción A.
 > - **Opción B:** respuesta inmediata `202`, el job corre en background (requiere BullMQ o similar).
 >
 > Se recomienda **Opción A** primero (más simple, sin nueva infraestructura). Si el volumen de órdenes crece, migrar a Opción B.
@@ -209,6 +209,16 @@ El frontend ya tiene acceso a la API interna. Se agrega un botón en la sección
 - **Acción:** `POST /ebay/reconciliation/run` (sin body para usar ventana por defecto, o con selector de fechas).
 - **Feedback:** spinner mientras corre → mensaje con el resumen (`N órdenes revisadas, M SOs nuevas creadas`).
 - **Habilitación:** el botón se deshabilita mientras hay una ejecución en curso (evitar doble-clic). Si el scheduler está corriendo, el intento manual simplemente resulta en 0 SOs nuevas (idempotencia).
+
+---
+
+## Documentación Swagger
+
+Todo el código nuevo debe documentarse con decoradores de `@nestjs/swagger`, siguiendo el mismo patrón de los módulos existentes:
+
+- **Controller:** `@ApiTags`, `@ApiOperation`, `@ApiResponse` en cada endpoint.
+- **DTOs de request/response:** `@ApiProperty` en cada campo (incluyendo el body opcional `{ dateFrom, dateTo }` y el response con el resumen).
+- **Módulo:** verificar que `EbayReconciliationModule` quede incluido en el setup de Swagger de `AppModule` si hay lista de módulos explícita.
 
 ---
 
