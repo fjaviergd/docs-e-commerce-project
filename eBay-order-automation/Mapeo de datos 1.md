@@ -713,9 +713,9 @@ $total = floatval($extendCost)
 - **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.fullName] ✅ ✅
 
 ### `shiptocountry`
-- **Descripción:** País del cliente a quien le hacen el envío, campo Country del bloque Shipping To.
-- **Notas:** countryCode de ebay
-- **Decision:** ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode] ✅ ✅
+- **Descripción:** País del cliente a quien le hacen el envío, campo Country del bloque Shipping To que viene en ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode] se debe usar el valor name de la tabla country el valor de ebay debe ser equivalente añ valor del campo iso.
+- **Notas:** countryCode de ebay 
+- **Decision:** valor name de la tabla country ✅ ✅
 
 ### `shiptoemail`
 - **Descripción:** Email del cliente a quien le hacen el envío, campo Email del bloque Shipping To.
@@ -988,6 +988,7 @@ $total = floatval($extendCost)
 - **Notas:** 1 por default?
 - **Decision:** Campo master_id asignar 1 por default ✅✅
 - **Columna referencia:**
+
 ---
 
 ## Campos en `inventory`
@@ -1005,6 +1006,12 @@ Estos campos aparecen en las instrucciones de reservar item y existen en la tabl
 - **Notas:** 
 - **Decision:** Si ✅✅
 - **Columna referencia:** id de so_info
+
+### `shipment_id`
+- **Descripción:** El id del shipment referente a su tabla `shipment`.
+- **Notas:** 
+- **Decision:** Si ✅✅
+- **Columna referencia:** id
 
 ### `unitprice`
 - **Descripción:** Precio de venta del inventory reservado.
