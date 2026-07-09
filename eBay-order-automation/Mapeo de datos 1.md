@@ -588,9 +588,9 @@ $total = floatval($extendCost)
 - **Decision:** Campo contactcompany se le asigna "EBAY" por defecto ✅✅
 
 ### `contactcountry`
-- **Descripción:** Country del cliente para el campo Country del bloque Customer Information.
-- **Notas:** countryCode de ebay 
-- **Decision:**   ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode] ✅✅
+- **Descripción:** Country del cliente para el campo Country del bloque Customer Information, campo Country que viene en ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode] se debe usar el valor name de la tabla country el valor de ebay debe ser equivalente al valor del campo iso.
+- **Notas:** countryCode de ebay (actualización 2026-07-09: misma resolución que `shiptocountry` y `to_country`, no se guarda el código crudo).
+- **Decision:** valor name de la tabla country ✅ ✅
 
 ### `contactpostalcode`
 - **Descripción:** Postal Code del cliente para el campo Postal Code del bloque Customer Information.
