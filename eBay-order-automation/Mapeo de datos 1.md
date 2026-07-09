@@ -882,10 +882,9 @@ $total = floatval($extendCost)
 - **Columna referencia:**
 
 ### `to_country`
-- **Descripción:** País de destino.
-- **Notas:** countryCode de ebay 
-  ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode]
-- **Decision:** Si ✅✅
+- **Descripción:** País de destino, campo Country del bloque Shipping To que viene en ebayResponse: [fulfillmentStartInstructions[0].shippingStep.shipTo.contactAddress.countryCode] se debe usar el valor name de la tabla country el valor de ebay debe ser equivalente al valor del campo iso.
+- **Notas:** countryCode de ebay (actualización 2026-07-09: misma resolución que `so_info.shiptocountry`, no se guarda el código crudo).
+- **Decision:** valor name de la tabla country ✅ ✅
 - **Columna referencia:**
 
 ### `to_name`
