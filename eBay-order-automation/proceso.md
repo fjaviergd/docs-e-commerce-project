@@ -217,3 +217,38 @@ Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las 
 > 1. **Escritura directa a `gts_crm_db`** vía TypeORM — confirmado.
 > 2. **Transacción solo en el CRM** (no distribuida): en este flujo a la Central solo se lee, así que todas las escrituras (`so_info` + `inventory` + `shipment`) caben en una transacción atómica del CRM. La escritura de vuelta en Central queda para el proceso posterior (ver Alcance).
 > 3. **Catálogo `states`**: confirmado que ya están todos los estados de US y MX (`master_id = 1`). El fallback a `states_id = NULL` se mantiene solo como defensa.
+
+---
+
+## Fase 4 — Propagación al sistema de listings / stock (funcionalidad posterior)
+
+**Diseño: ⏳ Pendiente · Implementación: ⏳ Pendiente**
+
+> **Alcance:** esta fase es el **"proceso posterior"** anticipado en la Fase 3.3 (ver nota de *Alcance*). Es una funcionalidad **adicional a la principal ya entregada**: la creación de la SO (Fases 1–3) queda intacta; esto se ejecuta **después** de crearla para reflejar la venta en el sistema de listings/stock. Se documenta como pendiente; su diseño se cerrará en una sesión dedicada antes de programar.
+
+### Objetivo
+
+Después de crear una orden **por cualquier método** (webhook, reconciliación programada o manual), disparar la actualización de stock reutilizando el orquestador existente:
+
+- **Endpoint existente:** `POST /api/update-stock-listing/lead` (`UpdateStockLeadService.updateStock`, en `crm-api-nestjs/src/ecommerce/orchestrators/update-stock/update-stock-lead.service.ts`).
+- **Fases del orquestador:** 0) validaciones · 1) transacciones coordinadas (**DBCentral** + **CRM inventory** + **GTS Store** + **CRM eBay Items**) · 2) **push best-effort a eBay** · 3) finalización.
+
+### Diferencia clave: NO empujar stock a eBay (evitar overselling)
+
+Se debe ejecutar todo el orquestador **excepto la Fase 2 (push a eBay)**. Todo lo demás (DBCentral, CRM inventory, GTS Store, CRM eBay Items) sí procede.
+
+**Motivo (overselling):** eBay descuenta las unidades en cuanto se vende, **incluso en `Awaiting Payment`** (las trata como reservadas). Nuestro sistema solo crea la SO cuando el pago se completa. Si además empujamos nuestra cantidad (calculada solo desde ventas pagadas) a eBay, **sobrescribimos el disponible correcto** que eBay ya había calculado y reabrimos unidades reservadas → riesgo de sobreventa. eBay ya lleva bien su disponible; no debemos pisarlo desde este flujo.
+
+**Enfoque propuesto:** un flag con alcance (p. ej. `skipEbaySync?: boolean`, default `false`) que salte **solo la Fase 2**. El flujo de órdenes lo invoca en `true`; el resto de flujos (increment/restock, reactivación de listings 0→N, ediciones manuales) siguen empujando a eBay sin cambios. **No** eliminar la Fase 2 globalmente.
+
+### Estado actual (punto de partida)
+
+Hoy la creación de la SO **solo reserva `inventory` en el CRM** (Fase 3); **no** reduce stock en DBCentral, GTS Store, eBay Items ni eBay. Esta fase cierra ese hueco de forma automática, menos el push a eBay.
+
+### Decisiones de diseño por cerrar (antes de programar)
+
+1. **Armado del payload:** de los `inventory` reservados en CRM → resolver `listingId` de Central + `inventoryItems` (`inventoryId`, `iqId`, `poId`, `poLine`) que espera el endpoint.
+2. **Reserva vs. decremento:** conciliar el "reservar" del flujo actual con el "decrementar + quitar relaciones" de update-stock para no doble-contar.
+3. **Idempotencia:** webhook + reconciliación (y re-runs) no deben decrementar dos veces la misma línea; apoyarse en la llave `(orderId, orderLineItemId)`.
+4. **Solo líneas reservadas:** las SO que quedan `Open` (sin inventario) no deben decrementar stock.
+5. **Política de fallo:** la creación de la orden y el decremento son transacciones separadas; definir qué ocurre si una falla (reintento, marcado, alerta).
