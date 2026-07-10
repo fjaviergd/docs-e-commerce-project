@@ -1,146 +1,211 @@
 # Plan: Actualización automática de tracking en eBay al generar la etiqueta
 
 **Fecha:** 2026-07-09
-**Estado:** Diseño — Propuesta (pendiente de decisiones abiertas, ver sección final)
-**Contexto:** La ingesta de órdenes de eBay (webhook + reconciliación) ya está operativa y crea la SO en el CRM. Este plan cubre el **tramo final del flujo**: una vez generada la etiqueta de envío, notificar a eBay el tracking number para eliminar el paso manual actual.
+**Actualizado:** 2026-07-10 — mecanismo de sincronización cerrado (outbox + trigger), hallazgos de la Logistics API incorporados, opciones descartadas removidas.
+**Estado:** Diseño — Confirmado. **Alcance activo: solo el envío automático del tracking (camino ShipEngine).** El comparador de precios (camino Logistics de eBay) queda **PENDIENTE**, en pausa hasta que eBay apruebe el acceso Limited Release (solicitud enviada — ver "Restricciones de la Logistics API").
+**Contexto:** La ingesta de órdenes de eBay (webhook + reconciliación) ya crea la SO en el CRM. Este plan cubre el tramo final: generar la etiqueta y que eBay quede actualizado con el tracking **sin el paso manual actual** (captura 2).
 
 ---
 
-## Problema a resolver
+## Dos caminos, dos problemas distintos
 
-Flujo actual (100% manual en el último paso):
+El componente de envío (`process.component.ts` / `shipping.component.ts`) genera etiquetas por dos vías. Este plan las trata por separado porque el mecanismo para actualizar eBay es distinto en cada una:
 
-1. La orden de eBay entra automáticamente y crea la SO (`so_info`) — ya automatizado.
-2. Un operador genera la etiqueta de envío desde el dashboard (`gtsdashboard/src/app/shipments/process/process.component.ts`, y también desde `so-crud/shipping/shipping.component.ts`), que llama al backend **Symfony/PHP** (`itaderp.com/backend/crm/web/shipment/shipengine_create_label` o `.../shipenginecreatelabeldirectly`). Ese backend llama a ShipEngine, genera el PDF y devuelve `tracking_number` + `label_download_pdf`.
-3. **Paso manual:** el operador va a Seller Hub de eBay, busca la orden y pega a mano el `tracking_number` y el carrier para marcarla como enviada (captura 2).
-
-El objetivo es eliminar el paso 3: que al completarse el paso 2, eBay se actualice solo.
-
-**Restricción de diseño confirmada:** el endpoint nuevo que habla con eBay debe vivir en `api-nestjs/src/ecommerce/modules/` (no en el backend Symfony). El backend Symfony/ShipEngine **no se modifica**.
+1. **Camino ShipEngine (el actual, UPS/FedEx) — ✅ ALCANCE ACTIVO:** Symfony genera la etiqueta y el `tracking_number` vía ShipEngine. eBay **no se entera** → hay que informarle el tracking. Es el 100% del volumen hoy (las capturas muestran tracking UPS `1ZXJ...`). **Este es el único entregable en construcción por ahora.**
+2. **Camino Logistics de eBay (comparador de tarifas) — ⏸️ PENDIENTE / EN PAUSA:** comprar la etiqueta a través de eBay. eBay genera el tracking → queda actualizado por construcción. **Bloqueado por aprobación de eBay (Limited Release) y limitado a USPS.** No se construye hasta desbloquear. Las secciones de este camino se conservan en el documento como diseño listo para retomar. Ver restricciones abajo.
 
 ---
 
-## Hallazgo crítico — prerrequisito bloqueante
+## Decisiones confirmadas (2026-07-10)
 
-Se revisó cómo NestJS resuelve el token de eBay por cuenta (`EbayOauthService.getSystemTokenByAccountId(ebayAccountId)` / `getSystemTokenByEbayUserId(ebayUserId)`, `api-nestjs/src/ecommerce/modules/ebay-oauth/ebay-oauth.service.ts:236-303`) y cómo se crea la SO desde la orden de eBay (`EbayOrdersService.processOrderConfirmation`, `ebay-orders.service.ts:67-70`).
-
-**El parámetro `account: GobigEbayLinkedAccount` que identifica qué cuenta vendedora de eBay recibió la orden se recibe, pero nunca se persiste en `so_info` ni en `shipment`.** `so_info.master_id` es una constante fija (`MASTER_ID = 1`, `ebay-orders.service.ts:30`) que no distingue entre las 4 cuentas eBay vinculadas mencionadas en `plan-reconciliation-polling.md`.
-
-**Consecuencia:** hoy, dado un `so_id`/`shipment_id`, no hay forma de saber a qué cuenta de eBay pertenece esa orden para pedir el access token correcto. Esto **bloquea** la función de sincronizar tracking si hay más de una cuenta eBay activa.
-
-**Opciones:**
-
-| Opción | Descripción | Trade-off |
-|---|---|---|
-| **A — Persistir el vínculo (recomendada)** | Agregar columna `ebay_account_id` a `so_info` (o tabla puente) y poblarla en `EbayOrdersService.processLineItem` al crear la SO. Migración simple, una sola escritura adicional. | Requiere tocar el flujo de creación de SO (ya construido y probado) y una migración de esquema. |
-| **B — Resolución por prueba** | Al sincronizar tracking, probar `getOrder(orderId)` contra el token de cada cuenta vinculada hasta que una responda 200. | Cero cambios al flujo existente, pero N llamadas a eBay por sync (N = cuentas vinculadas) y más latencia/rate-limit. Válido como parche temporal si hay presión de tiempo. |
-
-Se recomienda **Opción A**, ejecutada como primer paso de este plan (antes o junto con Fase 1) — dado que el proyecto ya está evolucionando el mapeo de SO↔eBay (`Mapeo de datos 1.md`), es más barato cerrarlo ahora que rehacerlo después.
+| #   | Tema                                  | Decisión                                                                                                                                                                                                                                                                                                                       |
+| --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Vínculo SO ↔ cuenta eBay              | Se persiste `ebay_account_id` en `so_info`, poblado al crear la SO. Es también el guard de "¿es SO de eBay?".                                                                                                                                                                                                                  |
+| 2   | Mecanismo de sync (camino ShipEngine) | **Tabla outbox + trigger de BD.** El frontend, al imprimir, dispara un endpoint NestJS que inserta la fila en `ebay_tracking_outbox`; un trigger MySQL agrega el `tracking_number` cuando Symfony lo escribe; un consumer NestJS hace polling y llama a eBay. Ni Symfony ni el navegador cargan la garantía de sincronización. |
+| 3   | Columna de tracking en Symfony        | `shipment.tracking_number`.                                                                                                                                                                                                                                                                                                    |
+| 4   | Varias etiquetas por SO               | Una SO puede generar varios `tracking_number`; **a eBay solo se informa el primero.** El consumer agrupa por orden y descarta los siguientes sin llamar a eBay.                                                                                                                                                                |
+| 5   | Expiración de cotización eBay         | Si la cotización expiró al momento de imprimir, **re-cotizar en silencio** antes de comprar (sin pedir acción al operador).                                                                                                                                                                                                    |
 
 ---
 
-## Diseño de la solución
+## Validación obligatoria — la SO debe ser de eBay
 
-### Punto de disparo — quién llama al nuevo endpoint
+El componente se usa también para **compras directas** (venta manual, sin eBay). Todo este plan aplica **solo si la SO se originó en eBay**. Criterio único: `so_info.ebay_account_id IS NOT NULL`. No cuesta un campo nuevo — es la misma columna de la Decisión #1.
 
-| Opción | Descripción | Trade-off |
-|---|---|---|
-| **1 — Frontend (recomendada para Fase 1)** | Justo después de que `generateLabel()` / `generateLabelDirectly()` (`process.component.ts:1183` y `:1290`) devuelvan `status: success`, el frontend llama al nuevo endpoint NestJS con `tracking_number`, `carrier` y `so_id`/`shipment_id`. | No toca el backend Symfony. Depende de que el navegador siga conectado tras generar la etiqueta — si falla, eBay queda desactualizado en silencio. |
-| **2 — Backend Symfony (server-to-server)** | El backend Symfony, tras persistir el tracking en su propia tabla `shipment`, llama al endpoint NestJS. | Más confiable (no depende del navegador), pero requiere tocar el backend legado, que el alcance actual busca evitar. |
+Se aplica en cada punto de entrada:
 
-**Recomendación:** Fase 1 con Opción 1 (mínimo alcance, sin tocar Symfony) + Fase 2 con un **job de reconciliación** (mismo patrón que `plan-reconciliation-polling.md`) que detecte shipments con tracking generado pero no confirmado en eBay, y reintente. Esto cubre el caso de falla silenciosa de la Opción 1 sin necesidad de tocar el backend legado.
+| Punto | Comportamiento si NO es SO de eBay |
+|---|---|
+| Frontend — `onCalculateClick()` | No pide cotización a eBay. La tabla de tarifas se comporta como hoy (solo ShipEngine). Se decide con un flag `isEbayOrder` cargado junto con los datos del shipment. |
+| Backend — endpoint que crea la fila en outbox | Resuelve `ebay_account_id` desde `so_info`; si es `NULL`, responde `not_applicable` y **no inserta nada**. |
+| Backend — endpoints Logistics (`quote` / `purchase`) | Si se invocan igual, responden `not_applicable`; nunca llaman a eBay con un `orderId` nulo/ajeno. |
+| Backend — consumer del outbox | Solo procesa filas del outbox, que por construcción ya son de órdenes eBay. Verificación defensiva: si `ebay_account_id` viene nulo, cierra la fila como error y loguea. |
 
-### Arquitectura y componentes
+Sin este guard, una compra directa con `client_PO_Number` vacío o con formato de `orderId` podría disparar una llamada a eBay con datos inválidos o tocar la orden equivocada.
 
-Sigue el mismo patrón ya usado por `ebay-reconciliation`: extender el cliente HTTP existente + un módulo orquestador nuevo.
+---
+
+## Mecanismo de sincronización — outbox + trigger (camino ShipEngine)
+
+Flujo confirmado:
 
 ```
-api-nestjs/src/ecommerce/modules/
-  ebay-fulfillment/
-    ebay-fulfillment.service.ts     ← EXTENDER: nuevo método createShippingFulfillment()
-  ebay-shipment-sync/                ← NUEVO módulo
-    ebay-shipment-sync.controller.ts   ← POST /ebay/shipment-sync/tracking
-    ebay-shipment-sync.service.ts      ← orquesta: resuelve SO → cuenta → token → llama a eBay
-    ebay-shipment-sync.module.ts
-    dto/sync-tracking.dto.ts
+1. Operador empaca, captura medidas, presiona "Print Label" (process.component.ts).
+2. Frontend, en paralelo a generateLabel()/generateLabelDirectly() (Symfony/ShipEngine):
+      POST /ebay/tracking-outbox   { shipmentId }
+   → NestJS resuelve shipment.so_id → so_info (ebay_account_id, client_PO_Number=orderId, reference=lineItemId)
+   → si ebay_account_id IS NULL: responde not_applicable, no inserta (compra directa)
+   → si es de eBay: INSERT ebay_tracking_outbox
+        (shipment_id, so_id, order_id, line_item_id, ebay_account_id,
+         tracking_number=NULL, status='PENDING_TRACKING', created_at)
+3. Symfony/ShipEngine genera la etiqueta y escribe shipment.tracking_number (asíncrono al paso 2).
+4. Trigger MySQL  AFTER UPDATE ON shipment  (tracking_number pasa de NULL a valor):
+      UPDATE ebay_tracking_outbox
+         SET tracking_number = NEW.tracking_number, status = 'READY'
+       WHERE shipment_id = NEW.id AND tracking_number IS NULL;
+   (las compras directas nunca tienen fila en outbox → el trigger no hace nada para ellas)
+5. Consumer NestJS (@Cron cada ~15 s, patrón de ebay-reconciliation con flag isRunning):
+      SELECT * FROM ebay_tracking_outbox WHERE status = 'READY'
+      Por cada fila:
+        a. ¿Ya se sincronizó otra fila del mismo order_id con éxito? (regla Decisión #4)
+             → sí: status='SKIPPED', no llama a eBay.
+        b. getSystemTokenByAccountId(ebay_account_id)              ← EbayOauthService (existente)
+        c. createShippingFulfillment(orderId, token, {...})        ← EbayFulfillmentService (nuevo)
+        d. éxito → status='SYNCED', synced_at=now()
+           error → status='ERROR', attempts++, last_error (reintenta hasta N)
 ```
 
-#### 1. Extensión de `EbayFulfillmentService` (nuevo método, cliente puro)
+**Por qué resuelve las 3 restricciones a la vez:**
+- **No depende del navegador:** el navegador solo *inserta la intención*. Si se cierra después, el trigger + consumer terminan el trabajo igual.
+- **No toca código de Symfony:** el trigger y la tabla son objetos de esquema; Symfony ni se entera.
+- **Casi tiempo real:** el consumer hace polling sobre una tabla trivial (no escanea `shipment`), latencia de segundos.
+
+### Respuesta a "¿de dónde traigo el número de cuenta de eBay?"
+
+**Sí es necesario** (el consumer lo requiere para pedir el token correcto con `getSystemTokenByAccountId`), pero **el frontend no lo resuelve**: el endpoint NestJS lo obtiene de `so_info.ebay_account_id` (Decisión #1) vía `shipment.so_id`, y lo guarda denormalizado en la fila del outbox. Ventajas: el frontend solo manda `shipmentId`, no se confía un dato sensible al cliente, y el consumer queda autocontenido (no re-consulta `so_info` al sincronizar).
+
+### Estructura de `ebay_tracking_outbox`
+
+| Columna | Tipo | Nota |
+|---|---|---|
+| `id` | PK | |
+| `shipment_id` | INT NOT NULL | ligado a `shipment.id` |
+| `so_id` | INT NOT NULL | para agrupar por orden |
+| `order_id` | VARCHAR | `so_info.client_PO_Number` (orderId de eBay) |
+| `line_item_id` | VARCHAR | `so_info.reference` (para el payload de eBay) |
+| `ebay_account_id` | INT NOT NULL | resuelto de `so_info`, define el token |
+| `tracking_number` | VARCHAR NULL | lo llena el trigger |
+| `status` | ENUM | `PENDING_TRACKING` → `READY` → `SYNCED`/`SKIPPED`/`ERROR` |
+| `attempts` | INT default 0 | reintentos del consumer |
+| `last_error` | TEXT NULL | diagnóstico |
+| `created_at` / `synced_at` | DATETIME | auditoría |
+
+> Con este diseño **no se necesita** la columna `shipment.ebay_synced_at` que se había propuesto: el estado vive en el outbox.
+
+### Extensión de `EbayFulfillmentService` (camino ShipEngine)
+
+Método nuevo, cliente puro (mismo patrón de logging/errores que `getOrder`/`getOrders`):
 
 ```ts
 // POST /sell/fulfillment/v1/order/{orderId}/shipping_fulfillment
-async createShippingFulfillment(
-  orderId: string,
-  token: string,
-  payload: {
-    lineItems?: { lineItemId: string; quantity?: number }[];
-    shippedDate: string;          // ISO 8601
-    shippingCarrierCode: string;  // ej. "UPS", "FedEx", "USPS"
-    trackingNumber: string;
-  },
-): Promise<{ fulfillmentId: string }>
+async createShippingFulfillment(orderId, token, {
+  lineItems: [{ lineItemId }],   // 1 SO = 1 lineItem (Opción B, decidida)
+  shippedDate,                    // ISO 8601
+  shippingCarrierCode,            // mapeo carrier interno → eBay
+  trackingNumber,
+}): Promise<{ fulfillmentId: string }>
 ```
 
-- Mismo patrón de logging/errores que `getOrder`/`getOrders` (sin loguear el token, sí el `orderId` y el body de error de eBay).
-- Si `lineItems` se omite, eBay marca como enviada toda la cantidad pendiente del line item — válido en este modelo porque **1 SO = 1 orderLineItemId completo** (decisión ya tomada en `Manejo de multi-line-items.md`, Opción B). No se necesita consultar `inventory` para la cantidad.
-
-#### 2. Módulo nuevo `EbayShipmentSyncService`
-
-```
-EbayShipmentSyncService.syncTracking(dto: SyncTrackingDto)
-  1. Cargar so_info por soId → obtener clientPoNumber (orderId), reference (orderLineItemId), ebay_account_id (Opción A del hallazgo crítico)
-  2. getSystemTokenByAccountId(ebay_account_id)         ← EbayOauthService (existente)
-  3. Mapear carrier interno → shippingCarrierCode de eBay (ver sección siguiente)
-  4. createShippingFulfillment(orderId, token, { lineItems: [{ lineItemId: reference }], shippedDate, shippingCarrierCode, trackingNumber })  ← EbayFulfillmentService (nuevo método)
-  5. Registrar el resultado (fulfillmentId de eBay) — ver "Idempotencia" abajo
-```
-
-#### 3. Mapeo de carrier interno → código de carrier de eBay
-
-Ya existe la tabla `carriers` (`gts-crm-lookups/entities/carrier.entity.ts`) con `external_carrier_code` (código ShipEngine) usada hoy para el mapeo **eBay → interno** en `GtsCrmLookupsService.resolveCarrier`. Para el sentido inverso (interno → eBay) se reutiliza la misma tabla, buscando por `external_carrier_code` (el que el backend Symfony/ShipEngine ya guardó en `shipment.carrier_code`) y devolviendo `carrier.name`.
-
-**Riesgo a validar en construcción:** `carrier.name` debe calzar con los valores que eBay acepta en `shippingCarrierCode` (`UPS`, `FedEx`, `USPS`, `DHL`, `OnTrac`, etc., o `Other` + `otherFulfillmentProviderName`). Si no calzan 1:1, se necesita una tabla de mapeo explícita (2–3 filas, no un problema estructural).
+Mapeo de carrier: reutilizar la tabla `carriers` (`external_carrier_code` → `name`), validando que `name` calce con el enum de eBay (`UPS`, `FedEx`, `USPS`...); si no calza 1:1, tabla de mapeo explícita (2–3 filas).
 
 ---
 
-## Contrato del endpoint nuevo
+## Comparador de tarifas ShipEngine vs. eBay (camino Logistics) — ⏸️ PENDIENTE
 
+> **Fuera del alcance activo.** Esta sección queda en pausa hasta que eBay apruebe el acceso Limited Release (solicitud enviada 2026-07-10). Se conserva como diseño listo para retomar. No hay tareas de construcción abiertas para este camino mientras siga bloqueado.
+
+**Requerimiento:** al presionar "Calcular" (`getRates()`, `process.component.ts:1447-1610`), agregar a la tabla `ratesList` la tarifa que eBay ofrece para el mismo envío y **preseleccionar la más barata** de toda la lista (hoy el default es coincidencia por `serviceString`; ese comportamiento cambia a "menor precio").
+
+### Restricciones de la Logistics API (críticas — leídas de `docs-ebay/logistics_api.json`)
+
+| Restricción | Impacto |
+|---|---|
+| **Limited Release** — solo apps/cuentas aprobadas por eBay | **Bloqueante — CONFIRMADO empíricamente** (ver abajo). Requiere solicitar acceso al programa a eBay; no se resuelve por código. |
+| **Solo USPS** — "The Logistics API only supports USPS shipping rates and labels" | La tarifa de eBay en la tabla será **siempre USPS**. Para envíos UPS/FedEx (el patrón actual) no habrá competencia de eBay. El comparador aporta valor solo en envíos donde USPS es competitivo (paquetes pequeños/ligeros). |
+| **Sin sandbox** — la spec solo declara host de producción (`https://api.ebay.com`) | No se puede probar en sandbox. La validación y las pruebas E2E del camino Logistics son en producción, y solo tras la aprobación. |
+| **Scope OAuth requerido** `https://api.ebay.com/oauth/api_scope/sell.logistics` | Es un scope de *user token* (authorization code). Los refresh tokens existentes deben re-consentirse incluyendo este scope. |
+
+**Resultado de la prueba real (2026-07-10, producción):** `POST /sell/logistics/v1_beta/shipping_quote` devolvió `errorId 1100 / domain ACCESS / "Insufficient permissions to fulfill the request"`. Es un rechazo de **permisos**, no de payload — no está relacionado con que la prueba se hiciera sin `orderId` (un `orderId` inválido daría un error de validación en `domain REQUEST`/`BUSINESS`, no `ACCESS`). Dos causas posibles, a descartar en orden:
+
+1. **El token no lleva el scope `sell.logistics`** → re-consentir el OAuth agregando ese scope y re-autorizar la cuenta.
+2. **La app no está en el Limited Release** → solicitar acceso a eBay. Si eBay ni siquiera permite otorgar el scope durante el consentimiento, es esta causa.
+
+**Desambiguación:** mintear un user token para una cuenta pidiendo explícitamente `sell.logistics`. Si el scope no puede ni solicitarse, o la llamada sigue en `1100` con el scope presente → falta aprobación (causa 2).
+
+**Conclusión:** el camino Logistics (comparador + compra vía eBay) queda **en pausa hasta obtener aprobación de eBay**. No bloquea el camino ShipEngine, que es el entregable principal y cubre el 100% del volumen actual.
+
+### Endpoint a probar para confirmar disponibilidad
+
+**`POST /sell/logistics/v1_beta/shipping_quote`** (`createShippingQuote`). Ya probado (ver arriba): actualmente devuelve `1100 ACCESS`. Re-probar una vez resuelto el scope y/o la aprobación.
+
+Payload mínimo de prueba (con una orden pagada real):
 ```
-POST /ebay/shipment-sync/tracking
-Body: {
-  "shipmentId": 123,        // o soId, a definir según qué identificador ya tiene el frontend en el callback de generateLabel
-  "trackingNumber": "1ZXJ28870313781042",
-  "carrierCode": "ups",     // código interno (ShipEngine), el mismo que ya devuelve/persiste Symfony
-  "shippedDate": "2026-07-10T02:49:34Z"   // opcional, default: ahora
+{
+  "orders": [{ "channel": "EBAY", "orderId": "<orderId real>" }],
+  "packageSpecification": { "weight": { "unit": "POUND", "value": "1" },
+                            "dimensions": { "unit": "INCH", "length":"6","width":"4","height":"2" } },
+  "shipFrom": { "fullName", "companyName", "primaryPhone", "contactAddress{...}" },
+  "shipTo":   { "fullName", "primaryPhone", "contactAddress{...}" }
 }
+```
+Respuesta esperada: `shippingQuoteId`, `expirationDate`, y `rates[]` con `rateId` + `baseShippingCost`. Con eso se confirma aprobación **y** se obtiene el `expirationDate` real (Decisión #5).
 
-Response 200: { "status": "ok", "ebayFulfillmentId": "...", "orderId": "21-14854-94058" }
-Response 4xx: { "status": "error", "msg": "..." }
+### Endpoints Logistics del flujo
+
+- `POST /sell/logistics/v1_beta/shipping_quote` → cotizar (devuelve `shippingQuoteId`, `rates[].rateId`, `expirationDate`).
+- `POST /sell/logistics/v1_beta/shipment/create_from_shipping_quote` → comprar con `{ shippingQuoteId, rateId }`; devuelve `shipmentTrackingNumber` + `labelDownloadUrl`.
+
+### Arquitectura backend (nuevo módulo `ebay-logistics`)
+
+```
+ebay-logistics/
+  ebay-logistics.service.ts     ← cliente puro: createShippingQuote(), createFromShippingQuote()
+  ebay-logistics.controller.ts
+    POST /ebay/logistics/quote      { soId, packages[] }  → normaliza rates al shape de ratesList
+    POST /ebay/logistics/purchase   { soId, shippingQuoteId, rateId }
+  ebay-logistics.module.ts
 ```
 
-- Autenticación: mismo guard interno que el resto de endpoints de `ecommerce` (confirmar cuál usan `ebay-reconciliation`/`ebay-notifications`).
-- Es **idempotente por diseño de eBay**: reenviar el mismo `trackingNumber` para el mismo `orderId` no duplica el envío (eBay actualiza el fulfillment existente). No se necesita tabla de control adicional para evitar duplicados, pero sí es recomendable loguear el `ebayFulfillmentId` devuelto para auditoría.
+- `quote` resuelve `soId → so_info` (guard eBay + `orderId`), arma el `ShippingQuoteRequest` y devuelve `{ status, shippingQuoteId, expirationDate, quotes[] }` con cada quote normalizado a `{ source:'ebay', rateId, service_type, shipping_amount:{amount,currency} }`.
+- `purchase` llama `createFromShippingQuote`; con el `shipmentTrackingNumber` + `labelDownloadUrl` que devuelve eBay, persiste el tracking/label en la tabla `shipment` del CRM (método nuevo `GtsCrmShipmentsService.saveTrackingInfo(...)`, porque hoy eso solo lo escribe Symfony). En este camino **no** se pasa por el outbox: eBay ya generó el tracking, la orden queda fulfilled por construcción.
 
----
+### Cambios en el frontend
 
-## Fase 2 (opcional, recomendada) — Reconciliación de tracking no sincronizado
-
-Mismo patrón que `plan-reconciliation-polling.md`: un job (`@Cron`, cada N horas) que recorra shipments con `tracking_number` seteado (columna que hoy sólo existe en el backend Symfony/tabla `shipment` real — **confirmar el nombre exacto de columna al construir**, ya que el `Shipment` entity de NestJS no la mapea todavía) y sin confirmación de sync a eBay, y reintente la Opción 1 (llamar `EbayShipmentSyncService.syncTracking`). Cubre el caso donde el navegador se cierra o falla la llamada del frontend.
-
-No es indispensable para el primer entregable, pero cierra el único punto de falla silenciosa de la Opción 1 de disparo.
+- `onCalculateClick()`: si `isEbayOrder`, dispara **en paralelo** `getRates()` (ShipEngine) y `POST /ebay/logistics/quote`. Concatena ambos resultados en `ratesList` (badge "ShipEngine" / "eBay" por fila) y **preselecciona el de menor `shipping_amount.amount`**.
+- Guardar `shippingQuoteId` + `expirationDate` de la cotización eBay.
+- `printLabel()` / `printLabelDirectly()` bifurcan por `selectedRate.source`:
+  - `shipengine` → flujo actual + `POST /ebay/tracking-outbox { shipmentId }` (mecanismo de sync).
+  - `ebay` → si `Date.now() > expirationDate`, **re-cotizar en silencio** y usar el nuevo `rateId`; luego `POST /ebay/logistics/purchase`.
 
 ---
 
 ## Orden de construcción
 
-1. **Prerrequisito — vínculo SO ↔ cuenta eBay:** migración + cambio en `EbayOrdersService.processLineItem` para persistir `ebay_account_id` en `so_info` (Opción A del hallazgo crítico). Sin esto, el resto del plan solo funciona con una cuenta eBay activa.
-2. **`EbayFulfillmentService.createShippingFulfillment`** — método nuevo, con test unitario mockeando `HttpService` (mismo patrón que `getOrder`).
-3. **Mapeo carrier interno → eBay** en `GtsCrmLookupsService` (o servicio nuevo pequeño) — validar contra los valores reales que devuelve ShipEngine vs. el enum de eBay.
-4. **`EbayShipmentSyncModule`** (controller + service + DTO) — importa `EbayOauthModule`, `EbayFulfillmentModule`, `GtsCrmSalesOrdersModule`, `GtsCrmLookupsModule`. Registrar en `EcommerceModule`.
-5. **Documentación Swagger** (`@ApiTags`, `@ApiOperation`, `@ApiProperty` en el DTO) — mismo estándar que el resto de módulos `ebay-*`.
-6. **Frontend:** agregar la llamada al nuevo endpoint en los callbacks `next` de `printLabel()` / `printLabelDirectly()` (`process.component.ts:1183-1208`, `:1290-1317`) y en `createShipment()` (`shipping.component.ts:206-247`), inmediatamente después de mostrar "Label generated". Mostrar feedback (éxito/error de sync a eBay) sin bloquear el flujo de impresión de etiqueta si el sync falla.
-7. **Prueba end-to-end en sandbox** (`EBAY_ENVIRONMENT=sandbox`, mismo ambiente de las capturas): generar etiqueta real, confirmar que la orden aparece marcada como enviada con el tracking correcto en Seller Hub sandbox.
-8. **(Opcional) Fase 2** — job de reconciliación de tracking no sincronizado.
+1. **Migración `so_info.ebay_account_id`** + poblarla en `EbayOrdersService.processLineItem`. Es el guard base de todo el plan.
+2. **Tabla `ebay_tracking_outbox` + trigger `AFTER UPDATE ON shipment`** (llena `tracking_number` y pone `status='READY'`).
+3. **`EbayFulfillmentService.createShippingFulfillment`** + mapeo carrier interno → eBay. Test unitario con `HttpService` mockeado.
+4. **Endpoint `POST /ebay/tracking-outbox`** (resuelve cuenta desde `so_info`, inserta la fila, guard eBay).
+5. **Consumer `@Cron`** del outbox: polling `status='READY'`, regla "primer tracking por orden", token, `createShippingFulfillment`, transición de estados y reintentos.
+6. **Frontend camino ShipEngine:** disparar `POST /ebay/tracking-outbox` al imprimir.
+7. **Swagger** en los endpoints/DTOs nuevos del alcance activo.
+8. **Prueba end-to-end:** (a) ShipEngine → outbox → trigger → consumer → tracking visible en Seller Hub; (b) compra directa NO genera fila en outbox ni llama a eBay; (c) SO con varias etiquetas → solo el primer tracking se sincroniza (resto `SKIPPED`).
+
+**— Hasta aquí el alcance activo. Elimina el paso manual para el 100% del volumen actual. —**
+
+### ⏸️ Pendiente — camino Logistics (retomar solo tras aprobación de eBay)
+
+9. Resolver aprobación Limited Release + scope `sell.logistics`; luego `EbayLogisticsService` (cliente + endpoints `quote`/`purchase`) + `GtsCrmShipmentsService.saveTrackingInfo`. Sin sandbox: se valida en producción tras aprobación.
+10. Frontend comparador: cotización eBay en paralelo, normalización, preselección por precio, badge de origen, bifurcación de `printLabel` con re-cotización silenciosa.
 
 ---
 
@@ -148,26 +213,20 @@ No es indispensable para el primer entregable, pero cierra el único punto de fa
 
 | Riesgo | Mitigación |
 |---|---|
-| No hay vínculo SO↔cuenta eBay persistido (hallazgo crítico) | Bloqueante — resolver primero (paso 1 de construcción). Sin esto, funciona solo con una cuenta activa. |
-| Fallo silencioso si el navegador se cierra tras generar la etiqueta (disparo por frontend) | Fase 2 (reconciliación) como red de seguridad; en el corto plazo, mostrar error visible en el dashboard si el POST al nuevo endpoint falla. |
-| Mismatch entre `carrier.name` interno y el enum `shippingCarrierCode` de eBay | Validar con casos reales en sandbox antes de producción; agregar tabla de mapeo explícita si no calzan. |
-| Un shipment podría, en teoría, empaquetar items de más de una SO (multi-line-item) | Según `Manejo de multi-line-items.md` (Opción B, decidida), cada `shipment.so_id` es singular → 1 shipment = 1 SO = 1 orderId+lineItemId. Confirmar en construcción que la UI de "add items to box" no permite mezclar SOs distintas en un mismo shipment; si lo permite, el endpoint necesita soportar N `lineItems` en un solo POST a eBay. |
-| Rate limit de eBay en `shipping_fulfillment` | Volumen esperado es 1 llamada por etiqueta generada (no es un job masivo) — riesgo bajo. |
-| Ambiente sandbox vs producción | El cliente ya resuelve `baseUrl` por `EBAY_ENVIRONMENT` (mismo patrón que `EbayFulfillmentService` existente) — sin cambio necesario. |
+| Componente compartido con compras directas | Guard `ebay_account_id IS NOT NULL` en los 4 puntos de entrada. |
+| Logistics API es Limited Release | Confirmar aprobación por cuenta con `createShippingQuote` antes de construir el paso 7–8; degradación limpia si una cuenta no está aprobada. |
+| Logistics solo soporta USPS | El comparador aporta valor acotado (paquetes chicos); no reemplaza UPS/FedEx. El camino ShipEngine cubre el resto y es el entregable principal. |
+| Varias etiquetas por SO | El consumer agrupa por `order_id` y sincroniza solo la primera (`SKIPPED` para el resto). Orden determinístico por `created_at`/`id`. |
+| Cotización eBay expira antes de imprimir | Re-cotizar en silencio usando `expirationDate` (Decisión #5). |
+| El trigger corre en cada UPDATE de `shipment` | Condición estricta `tracking_number` NULL→valor + `WHERE ... AND tracking_number IS NULL` en el outbox → costo despreciable y sin doble inserción. |
+| Consumer y mantenimiento de BD simultáneos | Flag `isRunning` en memoria (mismo patrón que `ebay-reconciliation`). |
+| Camino eBay: NestJS escribe en `shipment` (hoy solo Symfony) | Ya hay precedente (`GtsCrmShipmentsService.createWithManager`). Confirmar que Symfony no tenga lógica extra atada a esa escritura (facturación, correos). |
 
 ---
 
 ## Lo que NO cambia
 
-- El backend Symfony/PHP (`itaderp.com`) y la integración con ShipEngine: no se toca. Sigue generando la etiqueta y el `tracking_number` exactamente igual que hoy.
-- Los módulos `ebay-orders`, `ebay-oauth`, `ebay-notifications`, `ebay-reconciliation`: sin cambios (solo se extiende `ebay-fulfillment` con un método nuevo, mismo patrón ya usado para `getOrders`).
-- El modelo de datos "1 SO por producto" (`Manejo de multi-line-items.md`): no se revisita.
-
----
-
-## Preguntas / decisiones abiertas antes de construir
-
-1. ¿Se aprueba la migración para persistir `ebay_account_id` en `so_info` (Opción A del hallazgo crítico), o se prefiere la Opción B (resolución por prueba) como parche temporal?
-2. ¿El disparo debe ser solo desde el frontend (Fase 1), o se quiere de entrada la Fase 2 (reconciliación) para no depender de la confiabilidad del navegador?
-3. ¿Cuál es el nombre real de la(s) columna(s) de tracking en la tabla `shipment` del backend Symfony? Necesario para diseñar la consulta de reconciliación (Fase 2) y confirmar qué campos exactos devuelve `generateLabel`/`generateLabelDirectly` más allá de `tracking_number` y `label_download_pdf`.
-4. ¿Confirmа que ningún shipment actual mezcla items de más de una SO en el mismo paquete/etiqueta? (afecta si el endpoint necesita soportar múltiples `lineItems` por llamada).
+- Backend Symfony/PHP y su integración con ShipEngine: sin cambios de código (solo se agregan objetos de esquema que ignora: la tabla outbox y el trigger).
+- Módulos `ebay-orders`, `ebay-oauth`, `ebay-notifications`, `ebay-reconciliation`: sin cambios funcionales (se extiende `ebay-fulfillment` y se agregan módulos nuevos).
+- Modelo "1 SO por producto" (`Manejo de multi-line-items.md`).
+- Control humano: la preselección por precio es solo un default; el operador puede elegir otra tarifa antes de imprimir.
