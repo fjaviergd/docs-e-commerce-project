@@ -70,8 +70,8 @@ El worklist de pendientes manuales es un query simple, scopeado a SOs de eBay pa
 ```sql
 SELECT id, client_PO_Number, reference, status
 FROM so_info
-WHERE ebay_account_id IS NOT NULL   -- solo SOs originadas en eBay
-  AND listing_stock_deducted = 0;             -- pendientes de descuento manual
+WHERE ebay_account_id IS NOT NULL   -- eBay-originated SOs only
+  AND listing_stock_deducted = 0;             -- pending manual deduction
 ```
 
 ## 9. Cambio de esquema requerido — columna `listing_stock_deducted` en `so_info` (CRM)
@@ -81,7 +81,7 @@ WHERE ebay_account_id IS NOT NULL   -- solo SOs originadas en eBay
 ```sql
 ALTER TABLE so_info
   ADD COLUMN listing_stock_deducted TINYINT(1) NULL DEFAULT NULL
-  COMMENT 'Propagación de stock al listing tras la venta eBay: 1=descontado OK (DBCentral+CRM); 0=pendiente/falló, hacer manual; NULL=no aplica (SO no eBay)';
+  COMMENT 'Stock propagation to listing after eBay sale: 1=deducted OK (DBCentral+CRM); 0=pending/failed, handle manually; NULL=not applicable (non-eBay SO)';
 ```
 
 - **Nullable, default `NULL`**: solo se puebla en SOs originadas en eBay (`NULL` = no aplica). Así el worklist (`listing_stock_deducted = 0`) no arrastra SOs no-eBay ni históricas.
