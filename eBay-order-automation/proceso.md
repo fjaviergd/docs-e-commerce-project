@@ -24,6 +24,7 @@ Todo lo necesario para implementar está en estos archivos:
 - [`Mapeo de datos 1.md`](Mapeo%20de%20datos%201.md) — **mapeo campo por campo** (canónico): qué valor va a cada columna de `so_info`, `shipment` e `inventory`, con las Notas 01–07 (customer, rep, reserva, locations, carrier, multi-line, cuentas).
 - [`Manejo de multi-line-items.md`](Manejo%20de%20multi-line-items.md) — decisión y análisis de la estrategia multi-line (Opción B).
 - [`Arquitectura del codigo.md`](Arquitectura%20del%20codigo.md) — cómo organizar el código en módulos (ingreso compartido, orquestadores por evento, dominio CRM) con diagrama; guía para reutilizar al agregar más webhooks/eventos.
+- [`Propagacion de stock.md`](Propagacion%20de%20stock.md) — **Fase 4** (funcionalidad posterior): propagación de la venta al sistema de listings/stock reutilizando `update-stock` con `skipEbaySync`, sin push a eBay. Diseño cerrado + dudas abiertas.
 - [`tables_description.md`](tables_description.md) — **DDL de todas las tablas** involucradas (CRM `gts_crm_db` y Central), incluidas `gobig_ebay_linked_accounts` y `gobig_ebay_tokens`.
 - [`response_example.md`](response_example.md) — ejemplos de notificación (Sección 1), Fulfillment (Sección 2) y casos multi-line (Sección 3).
 - [`ebay-orders.jsonl`](ebay-orders.jsonl) — logs reales de notificaciones y respuestas de Fulfillment de las 4 cuentas.
@@ -224,43 +225,8 @@ Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las 
 
 **Diseño: ✅ Completado · Implementación: ⏳ Pendiente** (diseño cerrado 2026-07-10)
 
-> **Alcance:** esta fase es el **"proceso posterior"** anticipado en la Fase 3.3 (ver nota de *Alcance*). Es una funcionalidad **adicional a la principal ya entregada**: la creación de la SO (Fases 1–3) queda intacta; esto se ejecuta **después** de crearla para reflejar la venta en el sistema de listings/stock. Se documenta como pendiente; su diseño se cerrará en una sesión dedicada antes de programar.
+> **Esta fase tiene su propio documento:** [`Propagacion de stock.md`](Propagacion%20de%20stock.md) — diseño completo, decisiones cerradas, esquema de la tabla de idempotencia, plan de implementación y dudas abiertas. Aquí solo se resume para no duplicar.
 
-### Objetivo
+**Qué es:** el **"proceso posterior"** anticipado en la Fase 3.3. Funcionalidad **adicional a la principal ya entregada**: la creación de la SO (Fases 1–3) queda intacta; **después** de crearla se refleja la venta en el sistema de listings/stock (DBCentral + CRM inventory + GTS Store + CRM eBay Items), **sin empujar stock a eBay** (para evitar overselling: eBay ya descuenta al vender, incluso en `Awaiting Payment`).
 
-Después de crear una orden **por cualquier método** (webhook, reconciliación programada o manual), disparar la actualización de stock reutilizando el orquestador existente:
-
-- **Endpoint existente:** `POST /api/update-stock-listing/lead` (`UpdateStockLeadService.updateStock`, en `crm-api-nestjs/src/ecommerce/orchestrators/update-stock/update-stock-lead.service.ts`).
-- **Fases del orquestador:** 0) validaciones · 1) transacciones coordinadas (**DBCentral** + **CRM inventory** + **GTS Store** + **CRM eBay Items**) · 2) **push best-effort a eBay** · 3) finalización.
-
-### Diferencia clave: NO empujar stock a eBay (evitar overselling)
-
-Se debe ejecutar todo el orquestador **excepto la Fase 2 (push a eBay)**. Todo lo demás (DBCentral, CRM inventory, GTS Store, CRM eBay Items) sí procede.
-
-**Motivo (overselling):** eBay descuenta las unidades en cuanto se vende, **incluso en `Awaiting Payment`** (las trata como reservadas). Nuestro sistema solo crea la SO cuando el pago se completa. Si además empujamos nuestra cantidad (calculada solo desde ventas pagadas) a eBay, **sobrescribimos el disponible correcto** que eBay ya había calculado y reabrimos unidades reservadas → riesgo de sobreventa. eBay ya lleva bien su disponible; no debemos pisarlo desde este flujo.
-
-**Enfoque (cerrado):** un flag con alcance `skipEbaySync?: boolean` (default `false`). El flujo de órdenes lo invoca en `true`; el resto de flujos (increment/restock, reactivación de listings 0→N, ediciones manuales) siguen empujando a eBay sin cambios. **No** se elimina la Fase 2 globalmente.
-
-> **Matiz respecto a "salte SOLO la Fase 2":** la **Fase 0, Step 2** del orquestador llama `ebayOauthService.getValidToken(ebayAccountId, userId)`, que **valida token de eBay y depende de un `userId` humano** — que este flujo (a nivel sistema) no tiene. Por eso `skipEbaySync=true` significa **"sin ninguna interacción con eBay"**: salta el `getValidToken` de Fase 0 **y** todo el bloque de Fase 2 (incl. Fase 2.1 de reactivación). Todo lo demás (DBCentral, CRM inventory, GTS Store, eBay Items) se ejecuta igual.
-
-### Estado actual (punto de partida)
-
-Hoy la creación de la SO **solo reserva `inventory` en el CRM** (Fase 3); **no** reduce stock en DBCentral, GTS Store, eBay Items ni eBay. Esta fase cierra ese hueco de forma automática, menos el push a eBay.
-
-### Hallazgo que simplifica el diseño (convención de IDs)
-
-`ecommerce_listings_inventory.inventoryId` (Central) **==** `inventory.id` (CRM). La reserva ya se apoya en esa convención (`selectCandidates`). Por tanto **el `id` de cada fila de `inventory` reservada ES el `inventoryId` que espera el endpoint**; no hay mapeo cross-DB adicional. En **DECREMENT**, el endpoint solo usa `inventoryItems[].inventoryId` (DBCentral borra la relación por `inventoryId`+`listingId`; CRM nulifica `ecommerce_listing_id`/`ebay_listing_id`/`gts_store_listing_id`); los campos `iqId`/`poId`/`poLine` **solo se usan en INCREMENT** → aquí son opcionales/ignorados.
-
-### Arquitectura de la propagación
-
-**Método único compartido** `propagateStockForSo(soId)` — invocable desde webhook, reconciliación y manual; se ejecuta **síncrono tras el commit de la transacción de la SO**, en `try/catch` best-effort (un fallo **no** rompe la creación de la orden). Como `skipEbaySync` elimina el push lento a eBay, la propagación es solo trabajo de BD → rápida. (El paso a cola/async queda en el backlog de endurecimiento.)
-
-Pasos: 1) guard de idempotencia; 2) reconstruir payload desde estado persistido (`inventory WHERE so_id = :soId`); 3) `updateStock(dto, { skipEbaySync: true })` con `action=decrement`; 4) registrar resultado (`done` / `pending`+`attempts`+`last_error`).
-
-### Decisiones de diseño (cerradas 2026-07-10)
-
-1. **Armado del payload — ✅.** Se reconstruye **desde estado persistido**, no desde el objeto en memoria: `inventory WHERE so_id = :soId` → `listingId` = `ecommerce_listing_id` de esas filas (todas comparten listing: una SKU por SO), `inventoryItems = [{ inventoryId: row.id }]`, `quantity` = nº de filas reservadas (satisface la validación `inventoryItems.length === quantity` del DTO). `userId = rep.repId` (el `reservedbyuser_id`, user real del CRM), `ebayAccountId = listing.ebayAccountId`; ambos irrelevantes al saltar eBay pero satisfacen la validación con datos reales. `iqId`/`poId`/`poLine` opcionales (no usados en decrement).
-2. **Reserva vs. decremento — ✅.** No hay doble-conteo **por diseño**: la reserva y el decremento tocan **columnas y contadores disjuntos**. La creación de la SO escribe `so`/`so_id`/`soline`/`status='Reserved'`/`shipment_id`/`unitprice` en `inventory` y **no** toca contadores agregados. La propagación decrementa los contadores (DBCentral `ecommerce_listings.stock`, GTS Store `articulos.stock`, CRM `ebay_items.stock`) **una sola vez** y nulifica las FKs de listing en `inventory`. El único riesgo real de doble-conteo es **re-ejecutar la propagación** → cubierto por la idempotencia (el endpoint `update-stock` **no** es idempotente por sí mismo).
-3. **Idempotencia — ✅.** Guard persistente en **tabla dedicada** `ebay_order_stock_propagation` (gts_crm_db): `order_id`, `order_line_item_id`, `so_id`, `status`, `attempts`, `last_error`, timestamps; **único `(order_id, order_line_item_id)`**. Cubre webhook + reconciliación + re-runs y sirve además de soporte a reintentos y auditoría.
-4. **Solo líneas reservadas — ✅.** Si la SO quedó `Open` (0 filas con `so_id`) → **no se propaga**. `Partially Reserved` decrementa **solo lo reservado** (nº de filas), nunca el `lineItem.quantity` de eBay.
-5. **Política de fallo — ✅.** SO y decremento son transacciones separadas; **nunca** se revierte la SO (la venta es real). El endpoint `update-stock` ya es atómico en sus 3 DBs (rollback conjunto en Fase 1), así que un fallo deja todo sin decrementar → seguro reintentar completo. Se marca `pending` + `attempts` + `last_error`; reintento por job/reconciliación; alerta tras N intentos.
+**Cómo:** se reutiliza el orquestador existente `UpdateStockLeadService.updateStock` (`POST /api/update-stock-listing/lead`) con un nuevo flag `skipEbaySync=true` que omite toda interacción con eBay. Un método compartido `propagateStockForSo(soId)` se engancha tras el commit de la SO en `EbayOrdersService`, cubriendo webhook y reconciliación a la vez. Detalle y decisiones en el documento dedicado.
