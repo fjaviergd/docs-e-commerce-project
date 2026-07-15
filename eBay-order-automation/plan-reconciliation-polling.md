@@ -167,6 +167,19 @@ La idempotencia **ya existe** en `EbayOrdersService`: antes de crear cada SO ver
 
 **No se necesita ninguna tabla nueva** de control de "órdenes procesadas". El estado de verdad es `so_info` misma.
 
+### Conflicto con SOs creadas manualmente (`ebay_account_id IS NULL`)
+
+**Hallazgo (2026-07-15):** la llave `(client_PO_Number, reference)` solo detecta SOs creadas por nuestra propia automatización (webhook o reconciliación) — son las únicas que llenan `reference` con el `orderLineItemId`. Una SO creada **manualmente** en el CRM para una orden de eBay comparte el mismo `client_PO_Number` pero normalmente **nunca** llena `reference` (queda `NULL`). El pre-check `existsByOrderLine` no la ve, así que la reconciliación puede crear una SO duplicada para una orden que un humano ya procesó a mano.
+
+Caso real que expuso esto: orden `01-14883-00228` (cuenta `greenteksolutions-b`), creada el 2026-07-07 y procesada manualmente el mismo día (`so_info.reference = NULL`). El 2026-07-15 cambió su `lastModifiedDate` (se agregó fulfillment/tracking), entró en la ventana de 7h del job automático, y la reconciliación creó una **segunda** SO para la misma orden.
+
+**Fix:** antes de tocar cualquier línea de una orden, `EbayReconciliationService.processOrderWithCounts` verifica si ya existe alguna fila de `so_info` para ese `client_PO_Number` con `ebay_account_id IS NULL` — columna que solo llena nuestra propia automatización (`SoInfo.ebayAccountId`, agregada para `plan-auto-actualizacion-tracking-ebay.md`; `NULL` = SO no originada por el flujo de eBay). Si existe una fila así, se trata **toda la orden** como conflicto manual y **no se crea ninguna SO nueva para ninguna de sus líneas** — una SO manual normalmente cubre la orden completa sin desglosarse por línea, y no hay forma confiable de saber cuál(es) línea(s) ya cubre.
+
+- Nuevo método: `GtsCrmSalesOrdersService.hasManualSoForOrder(orderId)` — `COUNT(*) WHERE client_PO_Number = orderId AND ebay_account_id IS NULL`.
+- Nuevo contador en el resumen (por cuenta y agregado): `skippedManual`, separado de `errors` — no es una falla, es una decisión correcta de no duplicar trabajo humano.
+- Se reporta en `errorDetails` con `orderId`, todos los SKUs de la orden y el motivo, para revisión manual.
+- **Trade-off aceptado:** en una orden multi-línea donde un humano solo cubrió una línea manualmente y la otra genuinamente falta, la reconciliación tampoco crea automáticamente la línea faltante — queda para revisión humana en vez de arriesgarse a adivinar cuál línea cubre la SO manual.
+
 ---
 
 ## Extensión de `EbayFulfillmentService` — método `getOrders`
@@ -238,12 +251,14 @@ Todo el código nuevo debe documentarse con decoradores de `@nestjs/swagger`, si
 
 | Riesgo | Mitigación |
 |---|---|
-| Rate limit de eBay en `getOrders` (límite por cuenta) | `limit=200` reduce llamadas; 4 cuentas × pocas páginas no supera el umbral habitual. Agregar retry con backoff si se recibe 429. |
+| Rate limit de eBay en `getOrders` (límite por cuenta) | **Implementado.** `EbayFulfillmentService.getOrders` reintenta con backoff exponencial + jitter ante `429` (1 intento inicial + 3 reintentos), respetando el header `Retry-After` de eBay si viene. Otros errores (401/403/404/5xx) se propagan sin reintentar. |
 | Job automático y manual corren simultáneamente | Flag en memoria (`isRunning`) que bloquea una segunda ejecución concurrente. Si el scheduler está corriendo, el endpoint manual devuelve `409 Conflict`. |
 | Ventana de fecha demasiado corta y se pierden órdenes | Ventana de 7h para ejecuciones cada 6h da 1h de margen. Para el arranque inicial, ejecutar manual con rango amplio (ej. últimas 72h). |
 | `getOrders` no retorna órdenes eIS | **Descartado** — confirmado con datos reales (2026-07-03) que `getOrders` sí incluye órdenes eIS. No requiere manejo especial. |
 | Orden `cancelState: IN_PROGRESS` que luego se reactiva | El filtro la omite en la ejecución actual. Si la cancelación se revierte, en la siguiente ejecución del job aparecerá con `cancelState: NONE_REQUESTED` y `orderPaymentStatus: PAID`, y se procesará normalmente. |
 | Orden reembolsada parcialmente (`PARTIALLY_REFUNDED`) | **Decisión confirmada:** tratar igual que `PAID`. El pago original existió, el producto se despacha; el reembolso parcial es una transacción financiera separada que no afecta la SO. |
+| `dateTo` en el futuro (manual) tumba `getOrders` en las 4 cuentas | **Implementado.** `resolveWindow` descarta cualquier `dateTo >= ahora` y deja la ventana abierta (`[from..]`), que es el comportamiento nativo que espera eBay. Se loguea un warning cuando se ajusta. |
+| SO creada manualmente en el CRM (sin `reference`) → la reconciliación no la detecta y crea un duplicado | **Implementado (2026-07-15).** Gate por `ebay_account_id IS NULL` antes de procesar cualquier línea de la orden — ver "Conflicto con SOs creadas manualmente" arriba. |
 
 ---
 
