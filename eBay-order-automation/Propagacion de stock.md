@@ -4,7 +4,11 @@ Diseño de la funcionalidad que, tras crear una SO de eBay, refleja la venta en 
 
 > Corresponde a la **Fase 4** de [`proceso.md`](proceso.md) (el "proceso posterior" anticipado en la Fase 3.3). La creación de la SO (Fases 1–3) queda intacta; esto se ejecuta **después** de crearla.
 >
-> **Estado: Diseño ✅ CERRADO (versión simplificada, sin dudas pendientes) · Implementación ⏳ pendiente.**
+> **Estado: Diseño ✅ CERRADO · Implementación ✅ construida (gated, pendiente prueba e2e).**
+>
+> **Revisión (2026-07-16) — cambio de comportamiento a pedido de negocio:**
+> 1. **`Partially Reserved` también descuenta** su subconjunto reservado (antes: solo `Reserved`).
+> 2. **El descuento tiene prioridad sobre la reserva:** si el descuento falla, la reserva se **libera** (SO → `Open`) para rehacerla manualmente (reserva + descuento juntos). Esto revisa las decisiones 4 y 5 originales. Ver §6–§8 y §10.
 
 ---
 
@@ -35,37 +39,46 @@ Flag `skipEbaySync?: boolean` (default `false`) en `UpdateStockLeadDto`. El fluj
 
 `ecommerce_listings_inventory.inventoryId` (Central) **==** `inventory.id` (CRM). La reserva ya se apoya en esa convención (`GtsCrmInventoryReservationService.selectCandidates`). Por tanto **el `id` de cada fila de `inventory` reservada ES el `inventoryId` que espera el endpoint**; no hay mapeo cross-DB adicional. En **DECREMENT**, el endpoint solo usa `inventoryItems[].inventoryId`; los campos `iqId`/`poId`/`poLine` **solo se usan en INCREMENT** → aquí son opcionales/ignorados.
 
-## 6. Arquitectura (solo inline, sin cron ni tabla)
+## 6. Arquitectura (inline, sin cron ni tabla)
 
-**Método** `propagateStockForSo(soId)` en el módulo `ebay-orders`, enganchado en `EbayOrdersService.processLineItem` **tras el commit de la transacción de la SO**, en `try/catch` best-effort (un fallo **no** rompe la creación de la orden). Como `skipEbaySync` elimina el push lento a eBay, es solo trabajo de BD → rápido. Cubre webhook y reconciliación a la vez, porque ambos entran por `EbayOrdersService.processOrderConfirmation`.
+**Método** `propagateStockForSo(soId)` en el módulo `ebay-orders`, enganchado en `EbayOrdersService.processLineItem` **tras el commit de la transacción de la SO** (que reserva primero), en `try/catch` best-effort (un fallo **no** rompe la creación de la orden). Cubre webhook y reconciliación a la vez, porque ambos entran por `EbayOrdersService.processOrderConfirmation`.
 
 Pasos:
-1. **Guard por la bandera:** si `so.listing_stock_deducted = 1` → return (ya hecho).
-2. Si la SO **no** está totalmente reservada (`Partial`/`Open`) → dejar `listing_stock_deducted = 0` (manual) y return.
-3. Reconstruir payload desde estado persistido: `inventory WHERE so_id = :soId` → `listingId`, `inventoryItems = [{ inventoryId: row.id }]`, `quantity = nº de filas`.
+1. **Guard por la bandera:** si `so.listing_stock_deducted = 1` → return (ya hecho, idempotente).
+2. Cargar el subconjunto reservado: `inventory WHERE so_id = :soId`. Si **0 filas** (SO `Open`, nada reservado) → `listing_stock_deducted = 0` y return.
+3. Armar payload: `listingId = ecommerce_listing_id`, `inventoryItems = [{ inventoryId: row.id }]`, `quantity = nº de filas reservadas` (aplica a `Reserved` **y** `Partial`).
 4. `updateStock(dto, { skipEbaySync: true })` con `action = decrement`.
-5. Si `response.success === true` → `listing_stock_deducted = 1`. Si no → queda `0` (manual).
+5. **Éxito** → `listing_stock_deducted = 1`.
+6. **Fallo (flujo automático)** → **liberar la reserva**: limpiar `so`/`so_id`/`soline`/`status`/`shipment_id` y campos de reserva en las filas de `inventory` (quedan **disponibles**), SO → `Open`, `listing_stock_deducted = 0`.
+
+> **Prioridad del descuento (por qué liberamos):** si el descuento no se puede aplicar, los items **no** deben quedar reservados; se liberan para que se rehaga manual (reserva + descuento juntos). Clave: los items **solo se desenlazan del listing si el descuento tuvo éxito** — en el caso de fallo la reserva se revierte y los items quedan **disponibles y enlazados**, así el operador los encuentra normalmente. (Reservar primero y liberar-si-falla da el mismo resultado que "descontar primero" sin el problema de desenlazar items que luego no se encontrarían.)
+
+> **Disparo manual / reproceso:** `POST /ebay/stock-propagation/:soId` ejecuta la propagación de una sola SO **saltando el gate global** (`force`). **No** libera la reserva en caso de fallo (solo reporta el resultado). Sirve para el worklist manual y para pruebas puntuales de una SO. ⚠️ **Seguridad:** decrementa stock real y no tiene auth guard (como el resto de `ecommerce`) → protegerlo a nivel gateway (IP allowlist / no exponerlo público).
 
 > **Sin tabla de idempotencia ni cron de reintento.** La bandera en `so_info` **es** el guard (hay una SO por `(orderId, orderLineItemId)`), y el reintento es **manual**: el operador ve las SO con `listing_stock_deducted = 0` y hace la actualización completa. Diseño **compatible a futuro**: si más adelante se quiere reintento automático, un cron que barra `listing_stock_deducted = 0` se agrega **sin cambiar el esquema**.
 
-## 7. Garantía "todo o nada"
+## 7. Garantía "reservado ⟺ descontado"
 
-Para una SO totalmente reservada, `updateStock` descuenta como transacciones coordinadas con rollback conjunto en la Fase 1: **o commitea todo, o no cambia nada**. DBCentral borra las relaciones con un solo DELETE sobre todos los `inventoryId` y decrementa el stock con un solo UPDATE, dentro de transacción → **no existe el estado "quité unos ítems y otros no"**. El caso "vendió 10, solo hay 5" es **reserva parcial**, que se enruta a manual (ver §8), nunca se auto-descuenta a medias.
+El objetivo es que **nunca** quede una SO "reservada sin descontar". Se logra con la prioridad del descuento:
+
+- `updateStock` descuenta el subconjunto reservado como transacciones coordinadas con **rollback conjunto** en la Fase 1: **o commitea todo, o no cambia nada** (no existe "quité unos ítems y otros no"). Para un `Partial`, descuenta exactamente el subconjunto reservado; el **remanente no reservado** de la línea nunca se toca → sigue enlazado y disponible para reserva manual.
+- Si el descuento **falla**, el flujo automático **libera la reserva** → la SO queda `Open` y los items disponibles → se rehace manual. Los items **solo se desenlazan del listing si el descuento tuvo éxito**.
 
 **Limitaciones conocidas (documentadas, no bloqueantes):**
 
-1. **Commit no distribuido (raro).** Las 3 DBs commitean en secuencia (sin transacción distribuida). Si DBCentral commitea bien pero el commit de CRM falla justo después, podría quedar DBCentral descontado y CRM no. Poco probable (fallos *post-commit* son raros); es inherente al orquestador existente. Mitigación: **loguear fuerte** esa condición para que soporte la detecte antes de un redo manual (que en ese caso re-descontaría DBCentral).
-2. **Store legacy (por diseño).** Si el registro no existe en GTS Store, DBCentral+CRM **sí** se descuentan y la store se **salta** (marcado parcial en la respuesta). No es un descuento parcial de ítems: es "en la store no había nada que descontar". El descuento real de la venta (DBCentral+CRM) queda completo, por lo que `listing_stock_deducted = 1` es correcto.
+1. **Commit no distribuido (raro).** Las 3 DBs commitean en secuencia (sin transacción distribuida). Si DBCentral commitea bien pero el commit de CRM falla justo después, podría quedar DBCentral descontado y CRM no. Poco probable (fallos *post-commit* son raros); inherente al orquestador existente. Mitigación: **loguear fuerte**.
+2. **Store legacy (por diseño).** Si el registro no existe en GTS Store, DBCentral+CRM **sí** se descuentan y la store se **salta** (marcado parcial). No es un descuento parcial de ítems: es "en la store no había nada que descontar". El descuento real (DBCentral+CRM) queda completo → `listing_stock_deducted = 1` es correcto.
+3. **Descuento falla Y la liberación también falla (muy raro).** La liberación es una escritura simple en CRM; si fallara, quedaría "reservado sin descontar" — comportamiento benigno (items enlazados/findable, solo falta el stock) y la bandera en `0` lo deja en el worklist.
 
 ## 8. Qué SOs se propagan
 
-| Estado de la SO | Acción | Bandera |
+| Estado de la SO | Acción automática | Bandera |
 |---|---|---|
-| **Reserved** (todo reservado) | **Auto-propaga** el descuento | `1` si `success`, `0` si falla |
-| **Partially Reserved** | **Manual** (no auto, para no cruzar información) | `0` |
-| **Open** (nada reservado) | **Manual** (nada que descontar automáticamente) | `0` |
+| **Reserved** (todo reservado) | **Descuenta todo** | `1` si éxito; si falla → se **libera** la reserva (SO → `Open`), `0` |
+| **Partially Reserved** | **Descuenta el subconjunto reservado** | `1` si éxito; si falla → se **libera** la reserva (SO → `Open`), `0` |
+| **Open** (nada reservado) | Nada que descontar | `0` (manual) |
 
-El worklist de pendientes manuales es un query simple, scopeado a SOs de eBay para no arrastrar históricas:
+En un `Partial`, el **remanente no reservado** queda para reserva manual (nunca se tocó, sigue enlazado y disponible). El worklist de pendientes manuales, scopeado a SOs de eBay:
 
 ```sql
 SELECT id, client_PO_Number, reference, status
@@ -88,23 +101,29 @@ ALTER TABLE so_info
 - Al crear la SO de eBay se inicializa en `0` (dentro de la transacción de la SO); la propagación inline la voltea a `1` si tiene éxito.
 - (Opcional) un índice sobre `(ebay_account_id, listing_stock_deducted)` aceleraría el worklist; queda a criterio del equipo de backend por tratarse de una tabla legacy grande.
 
+> **Estado:** la columna (y `ebay_account_id`) **ya existen en el CRM de producción**.
+
 ## 10. Decisiones de diseño (cerradas)
 
-1. **Armado del payload.** Desde estado persistido: `inventory WHERE so_id = :soId` → `listingId = ecommerce_listing_id` (una SKU por SO), `inventoryItems = [{ inventoryId: row.id }]`, `quantity = nº de filas`. `userId = rep.repId`, `ebayAccountId = so_info.ebay_account_id` (columna ya persistida por la feature de tracking); ambos irrelevantes al saltar eBay pero satisfacen la validación del DTO. `iqId`/`poId`/`poLine` no se usan en decrement.
+1. **Armado del payload.** Desde estado persistido: `inventory WHERE so_id = :soId` → `listingId = ecommerce_listing_id` (una SKU por SO), `inventoryItems = [{ inventoryId: row.id }]`, `quantity = nº de filas`. `userId = rep.repId` (`reservedbyuser_id`), `ebayAccountId = so_info.ebay_account_id`; ambos irrelevantes al saltar eBay pero satisfacen la validación del DTO. `iqId`/`poId`/`poLine` no se usan en decrement.
 2. **Reserva vs. decremento (sin doble-conteo).** Reserva y decremento tocan columnas/contadores disjuntos. El único riesgo de doble-conteo es re-ejecutar la propagación → cubierto por la bandera `listing_stock_deducted` (el endpoint `update-stock` no es idempotente por sí mismo).
 3. **Idempotencia.** La bandera booleana `so_info.listing_stock_deducted` es el guard, respaldada por "una SO por `(orderId, orderLineItemId)`". Sin tabla dedicada.
-4. **Solo reservas completas.** `Reserved` → auto. `Partial`/`Open` → `listing_stock_deducted = 0`, actualización **manual** completa (evita cruzar información al descontar solo unos ítems).
-5. **Todo o nada + política de fallo.** `listing_stock_deducted = 1` solo si `response.success` (DBCentral+CRM commiteados). Cualquier fallo rollea la Fase 1 → nada cambia → queda `0` → manual. **Nunca** se revierte la SO (la venta es real). Reintento manual; sin cron. Ver limitaciones conocidas en §7.
+4. **Descuenta `Reserved` y `Partial`** (el subconjunto realmente reservado); solo `Open` no descuenta. *(Revisa la decisión original de "solo `Reserved`"; el `Partial` ahora descuenta lo reservado y su remanente queda manual.)*
+5. **Prioridad del descuento + liberación en fallo.** Si el descuento falla en el flujo automático, se **libera la reserva** (SO → `Open`, items disponibles) para rehacer manual — el descuento gobierna a la reserva. `updateStock` es atómico en su Fase 1. **Nunca** se revierte la venta/SO (queda `Open`). Reintento manual; sin cron. El disparo manual (`force`) **no** libera. Ver limitaciones en §7.
 
-## 11. Plan de implementación
+## 11. Implementación (construida, gated)
 
-1. **Backend team:** `ALTER TABLE so_info` (§9).
-2. **Flag `skipEbaySync`** en `UpdateStockLeadDto` (`@IsOptional`, default `false`) y en `updateStock`: envolver el `getValidToken` de Fase 0 y todo el bloque de Fase 2/2.1 en `if (!dto.skipEbaySync)`. Cuando se salta: `response.ebay.message = 'Skipped (skipEbaySync)'` y **no** agregar `partialFailures`. Cero cambios para los flujos actuales.
-3. **Inicializar `listing_stock_deducted = 0`** en la creación de SO de eBay (dentro de la transacción, en `buildSoData`/`createWithManager`).
-4. **`propagateStockForSo(soId)`** en `ebay-orders` (§6), enganchado tras el commit en `processLineItem`, en `try/catch`.
-5. **Entidad `SoInfo`:** mapear la nueva columna `listing_stock_deducted`.
+Todo detrás del flag `EBAY_STOCK_PROPAGATION_ENABLED` (default `false` → comportamiento actual intacto).
+
+1. **Columna** `so_info.listing_stock_deducted` (§9) — aplicada en prod; mapeada en la entidad `SoInfo` con `select: false` (ningún SELECT normal la toca → sin dependencia dura mientras el flag esté apagado).
+2. **Flag `skipEbaySync`** en `UpdateStockLeadDto` + `updateStock` (salta `getValidToken` de Fase 0 y toda la Fase 2/2.1).
+3. **Inicialización `listing_stock_deducted = 0`** en la creación de SO de eBay (gated), en `buildSoData`.
+4. **`EbayOrderStockPropagationService.propagateStockForSo(soId, { force?, releaseOnFailure? })`** (§6): descuenta `Reserved`/`Partial`; en fallo con `releaseOnFailure` libera la reserva (`releaseReservation`). El enganche inline pasa `releaseOnFailure: true`.
+5. **Endpoint manual** `POST /ebay/stock-propagation/:soId` (usa `force`, no libera) para worklist/pruebas.
+6. **Rollout:** deploy con el flag en `false`; prueba e2e con el endpoint manual sobre 1 SO (contra mirrors consistentes de las 3 BDs: Central, CRM, Store); luego encender el flag.
 
 ## 12. Dudas resueltas
 
-- ✅ **RESUELTA — Efecto de nulificar el linaje.** Se **conserva el comportamiento actual**: `update-stock` DECREMENT nulifica `ecommerce_listing_id`/`ebay_listing_id`/`gts_store_listing_id` en las filas de `inventory` vendidas. Hoy no se usa esa trazabilidad unidad→listing una vez vendida (el rastro unidad→SO→orden sí se conserva). Mejora futura fuera de alcance.
-- ✅ **RESUELTA — Órdenes previas a esta feature.** **Sin backfill.** Se arranca limpio desde el despliegue: las SOs creadas antes no se propagan ni se ajustan. Solo las órdenes nuevas (post-despliegue) auto-propagan.
+- ✅ **Efecto de nulificar el linaje.** Se **conserva el comportamiento actual**: `update-stock` DECREMENT nulifica `ecommerce_listing_id`/`ebay_listing_id`/`gts_store_listing_id` en las filas vendidas. No se usa esa trazabilidad unidad→listing una vez vendida (el rastro unidad→SO→orden sí se conserva).
+- ✅ **Órdenes previas a esta feature.** **Sin backfill.** Se arranca limpio desde el despliegue.
+- ✅ **Items desenlazados no findables al reservar manual.** Resuelto por diseño: los items **solo se desenlazan si el descuento tuvo éxito**; si falla, la reserva se libera y quedan enlazados/disponibles (§6–§7).
