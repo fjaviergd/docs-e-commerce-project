@@ -1024,6 +1024,18 @@ Estos campos aparecen en las instrucciones de reservar item y existen en la tabl
 - **Decision:** Si, revisar "Nota 03" ✅✅
 - **Columna referencia:**
 
+### `shipstatus`
+- **Descripción:** Estado de envío del item de inventory reservado.
+- **Notas:** ⚠️ **Agregado (2026-07-17):** columna existía en la tabla pero no estaba mapeada en la entidad `GtsCrmInventory`. Se llena con el mismo valor fijo que `so_info.shipstatus` (ver sección "Campos en `so_info`" — `shipstatus`), independientemente del `status` de reserva (Reserved/Partially Reserved/Open).
+- **Decision:** Campo shipstatus se llena con el valor `"Scheduled"` al reservar el item. ✅ ✅
+- **Columna referencia:**
+
+### `receivestatus`
+- **Descripción:** Estado de recepción del item de inventory reservado.
+- **Notas:** ⚠️ **Agregado (2026-07-17):** se llena junto con `shipstatus` al momento de reservar, con valor fijo.
+- **Decision:** Campo receivestatus se llena con el valor `"Received"` al reservar el item. ✅ ✅
+- **Columna referencia:**
+
 ### `datereserved`
 - **Descripción:** Fecha de cuando fue reservado el inventory en formato string
 - **Notas:** Ejemplo 06/25/2026 12:13:12 PM
