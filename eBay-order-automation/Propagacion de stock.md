@@ -4,11 +4,15 @@ Diseño de la funcionalidad que, tras crear una SO de eBay, refleja la venta en 
 
 > Corresponde a la **Fase 4** de [`proceso.md`](proceso.md) (el "proceso posterior" anticipado en la Fase 3.3). La creación de la SO (Fases 1–3) queda intacta; esto se ejecuta **después** de crearla.
 >
-> **Estado: Diseño ✅ CERRADO · Implementación ✅ construida (gated, pendiente prueba e2e).**
+> **Estado: Diseño ✅ CERRADO · Implementación ✅ EN PRODUCCIÓN (validada e2e, flag activo).**
+>
+> **Go-live (2026-07-17):** validada end-to-end contra los 3 mirrors y activada en prod (`EBAY_STOCK_PROPAGATION_ENABLED=true`). Primera venta automática confirmada (so 75911). Desde ahí, las SOs de eBay con `listing_stock_deducted` no-NULL son la "era automática".
 >
 > **Revisión (2026-07-16) — cambio de comportamiento a pedido de negocio:**
 > 1. **`Partially Reserved` también descuenta** su subconjunto reservado (antes: solo `Reserved`).
 > 2. **El descuento tiene prioridad sobre la reserva:** si el descuento falla, la reserva se **libera** (SO → `Open`) para rehacerla manualmente (reserva + descuento juntos). Esto revisa las decisiones 4 y 5 originales. Ver §6–§8 y §10.
+>
+> **UI (2026-07-18):** indicador visual del estado de stock en el detalle de la SO (dashboard). Ver §13 y §14.
 
 ---
 
@@ -127,3 +131,63 @@ Todo detrás del flag `EBAY_STOCK_PROPAGATION_ENABLED` (default `false` → comp
 - ✅ **Efecto de nulificar el linaje.** Se **conserva el comportamiento actual**: `update-stock` DECREMENT nulifica `ecommerce_listing_id`/`ebay_listing_id`/`gts_store_listing_id` en las filas vendidas. No se usa esa trazabilidad unidad→listing una vez vendida (el rastro unidad→SO→orden sí se conserva).
 - ✅ **Órdenes previas a esta feature.** **Sin backfill.** Se arranca limpio desde el despliegue.
 - ✅ **Items desenlazados no findables al reservar manual.** Resuelto por diseño: los items **solo se desenlazan si el descuento tuvo éxito**; si falla, la reserva se libera y quedan enlazados/disponibles (§6–§7).
+
+## 13. Indicador en la UI (chip de estado de stock)
+
+Añadido (2026-07-18) para que los usuarios vean, en el detalle de la SO, el estado del stock relacionado. **Es informativo** (sin botón/link; la actualización manual la hace el usuario cuando aplica).
+
+### Endpoint de lectura (crm-api-nestjs)
+
+`GET /api/ebay/stock-propagation/so/:soId` — solo lectura. Respuesta:
+
+```jsonc
+{
+  "applies": true,                 // false si la SO no es de eBay -> la UI no muestra nada
+  "state": "deducted",             // pre_feature | deducted | partial | pending
+  "listingStockDeducted": true,    // valor de so_info.listing_stock_deducted (bool | null)
+  "soStatus": "Reserved",          // so_info.status
+  "orderId": "07-14923-80489",     // so_info.client_PO_Number (eBay orderId)
+  "lineItemId": "10087574343007",  // so_info.reference (eBay lineItemId)
+  "ebayAccount": { "id": 6, "name": "greenteksolutions-b", "label": "B" }
+}
+```
+
+- `applies = (ebay_account_id != null)`. Para no-eBay devuelve `{ "applies": false }`.
+- `state`: `pre_feature` = `listing_stock_deducted` NULL (SO eBay previa a la automatización); `deducted` = flag 1 + status `Reserved`; `partial` = flag 1 + status `Partially Reserved`; `pending` = flag 0.
+- `ebayAccount.label` (A/B/C/D) se deriva del sufijo de `gobig_ebay_linked_accounts.name` (`greenteksolutions` = A, `...-b` = B, etc.).
+- Implementado en `EbayOrderStockPropagationService.getStockStatus` + `EbayStockPropagationController` (GET). Sin cambios de esquema.
+
+### Chip en el dashboard (crm-gtsdashboard)
+
+En `sales-orders/so-crud` se muestra un chip (servicio `SoStockStatusService` → el endpoint de arriba). Al hacer **hover** despliega un tooltip (`customTooltip`) con: descripción del estado, **cuenta eBay** (letra + nombre), **orderId**, **line item** y **status de la SO**.
+
+| Chip | `state` | Significado | ¿Acción del usuario? |
+|---|---|---|---|
+| 🟢 Stock deducted | `deducted` | Stock descontado automáticamente del listing | No |
+| 🟠 Partially deducted | `partial` | Se descontó el subconjunto reservado; el remanente sigue manual | Sí (el resto) |
+| 🔴 Stock not deducted | `pending` | No se descontó (SO `Open` o el descuento falló) | Sí (manual) |
+| ⚪ Before auto-stock | `pre_feature` | SO de eBay previa a la automatización | Manual (histórica) |
+| (sin chip) | — | SO no originada en eBay | N/A |
+
+## 14. Worklist / corte para ventas
+
+El campo `so_info.listing_stock_deducted` define el corte y las listas de trabajo (scopear siempre con `ebay_account_id IS NOT NULL`):
+
+- `NULL` = SO previa a la automatización (manual).
+- `1` = descontado automáticamente (nada que hacer). Ojo: en `partial`, se descontó lo reservado pero el **remanente** sigue manual.
+- `0` = no se descontó (Open/falló) → **manual**.
+
+```sql
+-- Primera SO de la era automática (el "corte" para ventas):
+SELECT MIN(so) AS primera_so_auto
+FROM so_info
+WHERE ebay_account_id IS NOT NULL AND listing_stock_deducted IS NOT NULL;
+
+-- Worklist: SOs de la era automática que el sistema NO pudo descontar (manual):
+SELECT so, id, status FROM so_info
+WHERE ebay_account_id IS NOT NULL AND listing_stock_deducted = 0;
+
+-- Backlog histórico (previas a la automatización, manual):
+SELECT so, id, status FROM so_info
+WHERE ebay_account_id IS NOT NULL AND listing_stock_deducted IS NULL;
+```
