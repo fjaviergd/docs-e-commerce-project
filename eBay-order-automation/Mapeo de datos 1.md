@@ -1036,6 +1036,12 @@ Estos campos aparecen en las instrucciones de reservar item y existen en la tabl
 - **Decision:** Campo receivestatus se llena con el valor `"Received"` al reservar el item. ✅ ✅
 - **Columna referencia:**
 
+### `socondition`
+- **Descripción:** Condición de venta del item de inventory reservado.
+- **Notas:** ⚠️ **Agregado (2026-07-21):** columna existía en la tabla pero no estaba mapeada en la entidad `GtsCrmInventory` ni se llenaba al reservar. Registros sincronizados antes de esta fecha se corrigieron manualmente con un `UPDATE` puntual.
+- **Decision:** Campo socondition se llena con el valor `"USED"` al reservar el item. ✅ ✅
+- **Columna referencia:**
+
 ### `datereserved`
 - **Descripción:** Fecha de cuando fue reservado el inventory en formato string
 - **Notas:** Ejemplo 06/25/2026 12:13:12 PM
