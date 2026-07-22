@@ -1028,8 +1028,8 @@ Estos campos aparecen en las instrucciones de reservar item y existen en la tabl
 
 ### `shipstatus`
 - **Descripción:** Estado de envío del item de inventory reservado.
-- **Notas:** ⚠️ **Agregado (2026-07-17):** columna existía en la tabla pero no estaba mapeada en la entidad `GtsCrmInventory`. Se llena con valor fijo en cada item que sí se reserva (Reserved o Partially Reserved). ⚠️ **Nota (2026-07-22):** a diferencia de `so_info.shipstatus` (que ahora queda vacío en `Partially Reserved`, porque en ese caso no se crea shipment), este campo de `inventory` sí se llena siempre que el item individual se reserva — no está condicionado a si hubo shipment.
-- **Decision:** Campo shipstatus se llena con el valor `"Scheduled"` al reservar el item. ✅ ✅
+- **Notas:** ⚠️ **Agregado (2026-07-17):** columna existía en la tabla pero no estaba mapeada en la entidad `GtsCrmInventory`. ⚠️ **Ajustado (2026-07-22):** solo se llena cuando la reserva de la SO queda completa (`Reserved`), igual que `so_info.shipstatus` — porque solo en ese caso se crea el shipment. En `Partially Reserved` el item sí se reserva (status/receivestatus/socondition se llenan igual), pero `shipstatus` queda **vacío (NULL)**.
+- **Decision:** Campo shipstatus se llena con el valor `"Scheduled"` al reservar el item, únicamente si `status = Reserved`. En `Partially Reserved` queda NULL. ✅ ✅
 - **Columna referencia:**
 
 ### `receivestatus`
