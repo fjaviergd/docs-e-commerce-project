@@ -156,7 +156,7 @@ Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las 
 4. **Customer** (nivel orden, una sola vez): resolver/crear desde `shipTo` (Nota 01) → `customer_id` reutilizado en las N SOs.
 5. **Por cada `lineItem`** (Opción B, una SO por producto):
    1. Idempotencia: si ya existe SO con `client_PO_Number = orderId` y `reference = orderLineItemId`, omitir.
-   2. Resolver rep, reservar inventory, crear `so_info`, crear `shipment`.
+   2. Resolver rep, reservar inventory, crear `so_info`, crear `shipment` **solo si la reserva quedó completa** (status `Reserved`; en `Partially Reserved` y `Open` no se despacha nada todavía — ver "Rutas alternas").
 6. **Status** por SO según lo reservado (Reserved / Partially Reserved / Open, Nota 03).
 
 #### Resolución de datos que no vienen de eBay (con tablas reales)
@@ -169,8 +169,9 @@ Definir con exactitud qué campo de la respuesta de eBay va a cada campo de las 
 
 #### Rutas alternas
 
-- Listing no encontrado (método viejo): no se reserva → SO `Open`, `warehouse_id = 3`.
-- Inventory insuficiente: `Partially Reserved`.
+- Listing no encontrado (método viejo): no se reserva → SO `Open`, `warehouse_id = 3`. ⚠️ **Cambio (2026-07-22):** no se crea `shipment` (no hay items que despachar).
+- Item no encontrado o no reservable (sin listing vinculado, o inventory ya reservado por otra SO): mismo caso anterior — SO `Open`, sin `shipment`.
+- Inventory insuficiente: `Partially Reserved`. Los items disponibles sí se reservan (`markReserved`), pero **no se crea `shipment`** — solo se despacha cuando la reserva queda completa (`Reserved`). ⚠️ **Ajustado (2026-07-22):** antes se creaba shipment también en este caso; se cambió porque no tiene sentido despachar una reserva incompleta.
 - Estado no encontrado: `states_id = NULL`.
 
 #### Concurrencia y consistencia

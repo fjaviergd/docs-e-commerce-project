@@ -744,6 +744,8 @@ $total = floatval($extendCost)
 ## Campos en `shipment`
 
 > **Alcance:** este flujo crea el registro de `shipment` con los datos de origen/destino y carrier, pero **no** genera la etiqueta de envío (label). Por eso los campos relacionados con la generación de label y paquete (weight, dimensiones, `package_quantity`, `num_packages`, `items`, tracking, costos, etc.) no se mapean: corresponden a un proceso posterior que no está en el alcance actual.
+>
+> ⚠️ **Cambio (2026-07-22):** el `shipment` solo se crea si la reserva quedó **completa** (status `Reserved`). Si el item no se encontró (listing no vinculado), no había inventory disponible (`Open`, sin items), o solo se cubrió parte de la cantidad pedida (`Partially Reserved`), no se despacha nada todavía y **no se crea** `shipment` — los items disponibles sí se reservan (`markReserved`), solo se difiere el shipment hasta completar la reserva. El resto del flujo (creación de la SO, `so_info`, etc.) se mantiene igual.
 
 ### `id`
 - **Descripción:** Automático, auto incrementable.
@@ -771,7 +773,7 @@ $total = floatval($extendCost)
 
 ### `status`
 - **Descripción:** Establecerlo como `"Scheduled"`.
-- **Notas:** `"Scheduled"` por defecto y si la so queda es diferente a Reserved que status
+- **Notas:** `"Scheduled"` por defecto. ⚠️ **Resuelto (2026-07-22):** la pregunta original ("si la so queda diferente a Reserved qué status") ya no aplica — el `shipment` solo se crea cuando la SO queda `Reserved`; en `Open` y `Partially Reserved` no se crea, así que este campo nunca se llena con otro valor.
 - **Decision:** `"Scheduled"` ✅✅
 - **Columna referencia:**
 
