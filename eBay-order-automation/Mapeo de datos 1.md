@@ -329,8 +329,8 @@ La identificación de la cuenta (vía `data.user.userId` de la notificación, en
 - **Descripción:** Status del Shipment
   Default para un SO nuevo: `Open`
   Cuando ya tiene un shipment agendado: `Scheduled`.
-- **Notas:** Scheduled porque vamos a crear el shipment
-- **Decision:** Campo shipstatus se llena con el valor "Scheduled"  ✅ ✅
+- **Notas:** Scheduled porque vamos a crear el shipment. ⚠️ **Ajustado (2026-07-22):** solo se crea shipment cuando la reserva queda `Reserved`. En `Open` y `Partially Reserved` no hay shipment agendado, así que el campo queda **vacío (NULL)**, no `"Scheduled"`.
+- **Decision:** Campo shipstatus se llena con el valor `"Scheduled"` únicamente cuando `status = Reserved` (se crea el shipment). En `Open`/`Partially Reserved` queda NULL. ✅ ✅
 
 ### `states_id`
 - **Descripción:** Estado para la aplicación de taxes. Va el id del state relacionado con el `state` del `shipment to`.
@@ -1028,7 +1028,7 @@ Estos campos aparecen en las instrucciones de reservar item y existen en la tabl
 
 ### `shipstatus`
 - **Descripción:** Estado de envío del item de inventory reservado.
-- **Notas:** ⚠️ **Agregado (2026-07-17):** columna existía en la tabla pero no estaba mapeada en la entidad `GtsCrmInventory`. Se llena con el mismo valor fijo que `so_info.shipstatus` (ver sección "Campos en `so_info`" — `shipstatus`), independientemente del `status` de reserva (Reserved/Partially Reserved/Open).
+- **Notas:** ⚠️ **Agregado (2026-07-17):** columna existía en la tabla pero no estaba mapeada en la entidad `GtsCrmInventory`. Se llena con valor fijo en cada item que sí se reserva (Reserved o Partially Reserved). ⚠️ **Nota (2026-07-22):** a diferencia de `so_info.shipstatus` (que ahora queda vacío en `Partially Reserved`, porque en ese caso no se crea shipment), este campo de `inventory` sí se llena siempre que el item individual se reserva — no está condicionado a si hubo shipment.
 - **Decision:** Campo shipstatus se llena con el valor `"Scheduled"` al reservar el item. ✅ ✅
 - **Columna referencia:**
 
